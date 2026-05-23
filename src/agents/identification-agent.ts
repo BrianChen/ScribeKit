@@ -1,0 +1,77 @@
+import { createAgent, providerStrategy, toolCallLimitMiddleware } from "langchain";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { z } from "zod";
+import { CONFIDENCE_LEVELS, PASSING_CONFIDENCE } from "../context";
+import { IDENTIFICATION_PROMPT } from "../prompts/identification";
+import { type GraphState, type NodeConfig } from "../state";
+import googlePlaces from "../tools/google-places";
+
+export const IdentificationOutput = z.object({
+  confidence: z.enum(CONFIDENCE_LEVELS),
+  placeDetails: z.object({
+    placeName: z.string(),
+    destinationName: z.string(),
+    country: z.string(),
+    address: z.string(),
+    latitude: z.number(),
+    longitude: z.number(),
+    phone: z.string().nullable(),
+    website: z.string().nullable(),
+    priceLevel: z.string().nullable(),
+    openingHours: z.object({
+      weekdayDescriptions: z.array(z.string()),
+    }).nullable(),
+    accessibilityOptions: z.record(z.boolean()).nullable(),
+  }).nullable(),
+});
+
+const identificationAgent = createAgent({
+  model: new ChatAnthropic({
+    model: "claude-haiku-4-5-20251001",
+    maxTokens: 2048,
+    maxRetries: 2,
+  }),
+  tools: [googlePlaces],
+  systemPrompt: IDENTIFICATION_PROMPT,
+  responseFormat: providerStrategy(IdentificationOutput),
+  middleware: [toolCallLimitMiddleware({ runLimit: 1 })],
+});
+
+export const identificationNode = async (state: GraphState, config: NodeConfig) => {
+  console.log("  [identification] starting...");
+
+  const { placeName, destinationName, country, address } = config.configurable ?? {};
+  const identificationCues = state.identificationCues || "";
+
+  let userMessage = `Identify and confirm this place: "${placeName}" in ${destinationName}, ${country}`;
+  if (address) {
+    userMessage += `\nAddress hint: ${address}`;
+  }
+  if (identificationCues) {
+    userMessage += `\nIdentification cues from photos: ${identificationCues}`;
+  }
+
+  const result = await identificationAgent.invoke({
+    messages: [{
+      role: "user",
+      content: userMessage,
+    }],
+  });
+
+  const response = result.structuredResponse;
+
+  console.log(`  [identification] confidence: ${response.confidence}`);
+
+  if (!PASSING_CONFIDENCE.has(response.confidence)) {
+    return {
+      confidence: response.confidence,
+      placeDetails: null,
+      errors: [`Place could not be confirmed (confidence: ${response.confidence})`],
+    };
+  }
+
+  return {
+    confidence: response.confidence,
+    placeDetails: response.placeDetails,
+  };
+};

@@ -1,0 +1,11 @@
+{
+  "placeName": "Ichiran Ramen",
+  "destinationName": "Tokyo",
+  "country": "Japan",
+  "address": "1-22-7 Jinnan, Shibuya",
+  "imageUrls": [
+    "https://example.com/img1.jpg",
+    "https://example.com/img2.jpg"
+  ],
+  "notes": "Best tonkotsu ramen I've ever had. The solo booth experience is so unique. Go late night to avoid lines."
+}
