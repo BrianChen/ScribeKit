@@ -1,10 +1,11 @@
 import { createAgent, providerStrategy } from "langchain";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { z } from "zod";
-import { Context } from '../context';
-import { EDITORIAL_PROMPT } from '../prompts/editorial'
 
-const EditorialOutput = z.object({
+import { EDITORIAL_PROMPT } from '../prompts/editorial'
+import { type GraphState, type NodeConfig } from '../state'
+
+export const EditorialOutput = z.object({
   tagline: z.string(),
   description: z.string(),
   whyVisit: z.array(z.string()),
@@ -50,8 +51,6 @@ const EditorialOutput = z.object({
   moodsConfidence: z.enum(["HIGH", "MEDIUM", "LOW"]),
 });
 
-export { EditorialOutput };
-
 const editorialAgent = createAgent({
   model: new ChatAnthropic({
     model: "claude-sonnet-4-6",
@@ -59,21 +58,33 @@ const editorialAgent = createAgent({
     maxRetries: 2,
   }),
   systemPrompt: EDITORIAL_PROMPT,
-  contextSchema: Context,
   responseFormat: providerStrategy(EditorialOutput),
 });
 
-export const editorialNode = async (state: any, config: any) => {
+export const editorialNode = async (state: GraphState, config: NodeConfig) => {
   console.log("  [editorial] starting...");
+
+  const visualSummary = state.visualSummary || "";
+  const notes = (config.configurable?.notes as string) || "";
+
+  let userMessage = `Write editorial content using these research notes:\n\n${state.researchNotes}`;
+
+  if (visualSummary) {
+    userMessage += `\n\n## Visual observations from submitted photos\n\n${visualSummary}`;
+  }
+
+  if (notes) {
+    userMessage += `\n\n## User notes (subjective, unverified)\n\n${notes}`;
+  }
 
   const result = await editorialAgent.invoke({
     messages: [{
       role: "user",
-      content: `Write editorial content using these research notes:\n\n${state.researchNotes}`,
+      content: userMessage,
     }],
-  }, config);
+  });
 
-  console.log(`  [editorial] done`);
+  console.log("  [editorial] done");
 
   return {
     editorialContent: result.structuredResponse,

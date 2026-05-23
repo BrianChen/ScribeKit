@@ -1,6 +1,6 @@
 export const RESEARCH_PROMPT = `You are a travel research agent. Your job is to gather detailed information about a specific place that will be used by an editorial writer to create travel content.
 
-You have access to context about the place: its name, destination, country, address, approximate coordinates, and opening hours.
+The place has already been confirmed to exist. You have access to its verified name, destination, country, and address.
 
 ## What to research
 

@@ -20,6 +20,7 @@ src/
   cli.ts                  # CLI entry point
   graph.ts                # LangGraph StateGraph — wires nodes + conditional edges
   context.ts              # Zod schema for immutable context + confidence levels
+  state.ts                # LangGraph Annotation state + PlaceDetails interface
   agents/
     image-analysis-agent.ts   # Image analysis agent + imageAnalysisNode wrapper
     identification-agent.ts   # Place identification agent + identificationNode wrapper
@@ -105,7 +106,7 @@ Confirms the place exists and retrieves verified details from Google Places.
 
 ### 3. Research Agent (`agents/research-agent.ts`)
 Gathers information on the verified place using trained data and web fetching.
-- **Model:** `claude-haiku-4-5-20251001` (maxTokens: 1024)
+- **Model:** `claude-haiku-4-5-20251001` (maxTokens: 2048)
 - **Tools:** `[fetch_url]`
 - **Middleware:** `toolCallLimitMiddleware({ runLimit: 3 })` — hard cap on fetch calls
 - **Input:** verified `placeDetails` from state (does not receive identification cues or user notes)

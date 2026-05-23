@@ -2,27 +2,27 @@
 
 ## Overview
 
-Expand ScribeKit to accept image inputs from social influencers submitting local hidden gems (restaurants, art galleries, museums, lesser-known places). This adds two new agents to the pipeline: an image analysis agent and a place identification agent, inserted before the existing research and editorial agents.
+Expand ScribeKit to accept image inputs alongside place submissions (restaurants, art galleries, museums, lesser-known places). This adds two new agents to the pipeline: an image analysis agent and a place identification agent, inserted before the existing research and editorial agents.
 
 ## Use Case
 
-Social influencers submit places they've visited. Their input is semi-structured: place name and city (required), plus optional address, freeform notes, and up to 5 image URLs. The system processes images to extract visual details, confirms the place exists via Google Places, researches it, and produces editorial content along with filtered valuable images.
+Users submit places they've visited. Input is semi-structured: place name and city (required), plus optional address, freeform notes, and up to 5 image URLs. The system processes images to extract visual details, confirms the place exists via Google Places, researches it, and produces editorial content along with filtered valuable images.
 
 ## Pipeline
 
 ```
-START → (has images?) → image-analysis → identification → (confidence >= MEDIUM?) → research → editorial → END
-                      → identification → (confidence >= MEDIUM?) → research → editorial → END
-                                                                → END (error)
+START → (has images?) → image-analysis-agent → identification-agent → (confidence >= MEDIUM?) → research-agent → editorial-agent → END
+                      → identification-agent → (confidence >= MEDIUM?) → research-agent → editorial-agent → END
+                                                                      → END (error)
 ```
 
 Two conditional edges:
-1. **After START** — routes to `image-analysis` if `imageUrls` is present and non-empty, otherwise skips to `identification`.
-2. **After identification** — routes to `research-agent` if confidence is VERY_HIGH, HIGH, or MEDIUM. Routes to END if confidence is LOW or NONE.
+1. **After START** — routes to `image-analysis-agent` if `imageUrls` is present and non-empty, otherwise skips to `identification-agent`.
+2. **After identification-agent** — routes to `research-agent` if confidence is VERY_HIGH, HIGH, or MEDIUM. Routes to END if confidence is LOW or NONE.
 
 ## Input Schema
 
-Influencer-facing input:
+Input schema:
 
 ```typescript
 interface GenerateInput {
@@ -35,42 +35,50 @@ interface GenerateInput {
 }
 ```
 
-- `reservable` removed from the schema entirely.
-- `address`, `latitude`, `longitude`, `openingHours` are populated by the identification agent from Google Places, not from the influencer's input.
-- The influencer's `address` is an optional hint used by the identification agent during search, but the Google Places result overrides it.
+- `reservable`, `latitude`, `longitude`, and `openingHours` removed from the input schema entirely.
+- `address`, `latitude`, `longitude`, `phone`, `website`, `priceLevel`, `openingHours`, and `accessibilityOptions` are populated by the identification agent from Google Places.
+- The submitted `address` is an optional hint used by the identification agent during search, but the Google Places result overrides it.
 
 ## Graph State
 
+Uses LangGraph's `Annotation` API (not `StateSchema`, which is incompatible with Zod 3.x):
+
 ```typescript
-const State = new StateSchema({
+interface PlaceDetails {
+  placeName: string;
+  destinationName: string;
+  country: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  phone: string | null;
+  website: string | null;
+  priceLevel: string | null;
+  openingHours: { weekdayDescriptions: string[] } | null;
+  accessibilityOptions: Record<string, boolean> | null;
+}
+
+const State = Annotation.Root({
   // image analysis outputs
-  visualSummary: z.string().default(""),
-  identificationCues: z.string().default(""),
-  filteredImageUrls: z.array(z.string()).default([]),
+  visualSummary: Annotation<string>({ reducer: (_, b) => b, default: () => "" }),
+  identificationCues: Annotation<string>({ reducer: (_, b) => b, default: () => "" }),
+  filteredImageUrls: Annotation<string[]>({ reducer: (_, b) => b, default: () => [] }),
 
   // identification outputs
-  placeConfirmed: z.boolean().default(false),  // derived: true when confidence >= MEDIUM
-  confidence: z.enum(["VERY_HIGH", "HIGH", "MEDIUM", "LOW", "NONE"]).default("NONE"),
-  placeDetails: z.object({
-    placeName: z.string(),
-    destinationName: z.string(),
-    country: z.string(),
-    address: z.string(),
-    latitude: z.number(),
-    longitude: z.number(),
-    openingHours: z.object({
-      weekdayDescriptions: z.array(z.string()),
-    }).nullable(),
-  }).nullable().default(null),
+  confidence: Annotation<string>({ reducer: (_, b) => b, default: () => "NONE" }),
+  placeDetails: Annotation<PlaceDetails | null>({ reducer: (_, b) => b, default: () => null }),
 
   // research outputs
-  researchNotes: z.string().default(""),
-  researchSources: z.array(z.string()).default([]),
+  researchNotes: Annotation<string>({ reducer: (_, b) => b, default: () => "" }),
+  researchSources: Annotation<string[]>({ reducer: (_, b) => b, default: () => [] }),
 
   // editorial outputs
-  editorialContent: z.record(z.string(), z.any()),
+  editorialContent: Annotation<Record<string, any>>({ reducer: (_, b) => b, default: () => ({}) }),
 
-  errors: z.array(z.string()).default([]),
+  errors: Annotation<string[]>({
+    reducer: (a, b) => [...a, ...b],
+    default: () => [],
+  }),
 });
 ```
 
@@ -84,10 +92,11 @@ const State = new StateSchema({
 
 - Receives all image URLs (up to 5) in a single vision call.
 - Images are fetched and validated through the existing `url-validator.ts` security layer (SSRF protection, HTTPS-only, private IP blocking), then converted to base64 for the vision API.
-- Produces three outputs:
-  1. **Per-image filtering verdict** — does this image tell you something about the place? Keep or discard with a reason.
-  2. **Identification cues** — signage text, venue type, cuisine, architectural style, neighborhood/location hints. Consumed by the identification agent.
-  3. **Visual summary** — atmosphere, decor, vibe, food/art descriptions. Consumed by the editorial agent.
+- Produces per-image output, each with:
+  1. **Filtering verdict** — does this image tell you something about the place? Keep or discard with a reason.
+  2. **Identification cues** — signage text, venue type, cuisine, architectural style, neighborhood/location hints. Only populated for kept images.
+  3. **Visual summary** — atmosphere, decor, vibe, food/art descriptions. Only populated for kept images.
+- The node function merges only kept images' cues and summaries into the state strings (joined with double newlines). Discarded images contribute nothing to downstream agents.
 
 ### Filtering Criteria
 
@@ -113,9 +122,9 @@ const ImageAnalysisOutput = z.object({
     url: z.string(),
     keep: z.boolean(),
     reason: z.string(),
+    identificationCues: z.string(),
+    visualSummary: z.string(),
   })),
-  identificationCues: z.string(),
-  visualSummary: z.string(),
 });
 ```
 
@@ -129,13 +138,13 @@ const ImageAnalysisOutput = z.object({
 
 **File:** `src/tools/google-places.ts`
 
-- Searches Google Places API (Text Search or Find Place) using place name, city, country, and optional address hint.
-- Returns top candidates with: name, address, coordinates, opening hours, place ID.
+- Searches Google Places API (Text Search) using place name, city, country, and optional address hint.
+- Returns top candidates with: name, address, coordinates, phone, website, priceLevel, opening hours, accessibilityOptions.
 - Requires `GOOGLE_PLACES_API_KEY` in `.env`.
 
 ### Behavior
 
-- Receives the influencer's input (place name, destination, country, address hint) plus identification cues from image analysis (if images were provided).
+- Receives the submitted input (place name, destination, country, address hint) plus identification cues from image analysis (if images were provided).
 - Calls `google_places` to search for the place.
 - Picks the most likely match from candidates — no user interaction.
 - Returns verified/corrected place data with a confidence level.
@@ -157,7 +166,6 @@ VERY_HIGH, HIGH, or MEDIUM → continue to research agent. LOW or NONE → end t
 
 ```typescript
 const IdentificationOutput = z.object({
-  placeConfirmed: z.boolean(),
   confidence: z.enum(["VERY_HIGH", "HIGH", "MEDIUM", "LOW", "NONE"]),
   placeDetails: z.object({
     placeName: z.string(),
@@ -166,9 +174,13 @@ const IdentificationOutput = z.object({
     address: z.string(),
     latitude: z.number(),
     longitude: z.number(),
+    phone: z.string().nullable(),
+    website: z.string().nullable(),
+    priceLevel: z.string().nullable(),
     openingHours: z.object({
       weekdayDescriptions: z.array(z.string()),
     }).nullable(),
+    accessibilityOptions: z.record(z.boolean()).nullable(),
   }).nullable(),
 });
 ```
@@ -177,15 +189,15 @@ const IdentificationOutput = z.object({
 
 ### Research Agent
 
-- Uses verified `placeDetails` from state as its context (confirmed name, destination, country, address, coordinates, opening hours).
-- Does **not** receive identification cues or influencer notes.
+- Uses verified `placeDetails` from state as its context (confirmed name, destination, country, address, coordinates, phone, website, priceLevel, opening hours, accessibilityOptions).
+- Does **not** receive identification cues or user notes.
 - Assumes the place exists and has been confirmed.
 - No other changes to its behavior or prompt structure.
 
 ### Editorial Agent
 
 - Receives `visualSummary` from state as additional context alongside research notes.
-- Receives influencer `notes` from configurable as subjective input.
+- Receives user `notes` from configurable as subjective input.
 - Prompt updated to instruct it to treat visual summary as snapshots of specific areas (not comprehensive) and notes as subjective perspective (not verified facts).
 - `filteredImageUrls` pass through state untouched to the final output.
 
@@ -199,7 +211,11 @@ interface GenerateResult {
   address: string;              // from Google Places
   latitude: number;             // from Google Places
   longitude: number;            // from Google Places
+  phone: string | null;         // from Google Places
+  website: string | null;       // from Google Places
+  priceLevel: string | null;    // from Google Places (e.g. PRICE_LEVEL_MODERATE)
   openingHours: { weekdayDescriptions: string[] } | null;
+  accessibilityOptions: Record<string, boolean> | null; // from Google Places
   confidence: "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
   researchNotes: string;
   researchSources: string[];
@@ -225,14 +241,6 @@ When the graph ends early due to low confidence:
 | Agent | Receives | Produces |
 |-------|----------|----------|
 | **Image analysis** | image URLs | identificationCues, visualSummary, filteredImageUrls |
-| **Identification** | influencer input (name, city, country, address hint) + identificationCues | placeConfirmed, confidence, placeDetails |
+| **Identification** | submitted input (name, city, country, address hint) + identificationCues | confidence, placeDetails (name, address, coords, phone, website, priceLevel, openingHours, accessibilityOptions) |
 | **Research** | verified placeDetails | researchNotes, researchSources |
-| **Editorial** | researchNotes + visualSummary + influencer notes (subjective) | editorialContent |
-
-## Future Considerations
-
-- **Influencer notes filtering:** The influencer's freeform notes may need a filtering/cleaning step before being passed to the editorial agent to strip out inaccuracies, irrelevant content, or poorly formatted text. Not in scope for this iteration but should be considered.
-- **Fallback for places not on Google Places:** New, informal, or unlisted places (e.g. a brand new restaurant, an unnamed street food stall) will be rejected under the current gate logic. A future iteration could have the research agent act as a secondary verification step — searching the web for evidence the place exists (social media, review sites, blog mentions) and upgrading the confidence if found. This would let the pipeline handle places that are real but not yet indexed by Google.
-- **Video input:** Influencers also post IG reels describing places. Would require audio transcription (Whisper, Deepgram) and key frame extraction. Deferred — start with images first.
-- **Editorial schema cleanup:** The existing `EditorialOutput` has `bookingRequired` which referenced the now-removed `reservable` field. The editorial prompt and schema should be reviewed to ensure they don't depend on removed input fields.
-- **Factual fields redistribution:** Several editorial output fields are factual rather than creative (neighbourhood, visitDuration, bookingRequired, bookInAdvanceWarning, dressCode, indoorOutdoor, weatherDependent, seasonalTips). These may be better owned by the research agent, which has direct access to factual sources. Currently kept in editorial for simplicity — revisit in a future iteration.
+| **Editorial** | researchNotes + visualSummary + user notes (subjective) | editorialContent |

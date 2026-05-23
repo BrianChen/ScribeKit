@@ -1,6 +1,5 @@
 import { describe, it, mock, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import fetchUrl from './fetch-url';
 
 const mockValidateUrl = mock.fn();
 mock.module("../helpers/url-validator", {
@@ -8,8 +7,10 @@ mock.module("../helpers/url-validator", {
 });
 
 mock.module("langchain", {
-  exports: { tool: (fn: Function) => fn },
+  exports: { tool: (fn: (...args: unknown[]) => unknown) => fn },
 });
+
+const { default: fetchUrl } = await import("./fetch-url");
 
 const originalFetch = globalThis.fetch;
 

@@ -2,8 +2,9 @@ import { createAgent, providerStrategy, toolCallLimitMiddleware } from "langchai
 import { ChatAnthropic } from "@langchain/anthropic";
 import { z } from 'zod';
 import fetchUrl from '../tools/fetch-url';
-import { Context } from '../context';
+
 import { RESEARCH_PROMPT } from '../prompts/research';
+import { type GraphState, type NodeConfig } from '../state';
 
 const ResearchOutput = z.object({
   researchNotes: z.string().describe("Research summary"),
@@ -18,26 +19,36 @@ const researchAgent = createAgent({
   }),
   tools: [fetchUrl],
   systemPrompt: RESEARCH_PROMPT,
-  contextSchema: Context,
   responseFormat: providerStrategy(ResearchOutput),
   middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
 });
 
-export const researchNode = async (state: any, config: any) => {
+export const researchNode = async (state: GraphState, config: NodeConfig) => {
   console.log("  [research] starting...");
+
+  const placeDetails = state.placeDetails;
+  const configurable = config.configurable ?? {};
+  const placeName = placeDetails?.placeName ?? configurable.placeName;
+  const destinationName = placeDetails?.destinationName ?? configurable.destinationName;
+  const country = placeDetails?.country ?? configurable.country;
+  const address = placeDetails?.address ?? configurable.address ?? "";
+
+  let userMessage = `Research this place: ${placeName} in ${destinationName}, ${country}`;
+  if (address) {
+    userMessage += `\nAddress: ${address}`;
+  }
 
   const result = await researchAgent.invoke({
     messages: [{
       role: "user",
-      content: `Research this place: ${config.configurable.placeName} in ${config.configurable.destinationName},
-${config.configurable.country}`
+      content: userMessage,
     }],
-  }, config);
+  });
 
-  console.log(`  [research] done`);
+  console.log("  [research] done");
 
   return {
     researchNotes: result.structuredResponse.researchNotes,
-    researchSources: result.structuredResponse.researchSources
+    researchSources: result.structuredResponse.researchSources,
   };
 };

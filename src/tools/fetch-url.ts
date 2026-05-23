@@ -67,7 +67,7 @@ const fetchUrl = tool(
   {
     name: "fetch_url",
     description: "Fetch a URL and return its text content",
-    schema: z.object({ url: z.url() }),
+    schema: z.object({ url: z.string().url() }),
   }
 );
 

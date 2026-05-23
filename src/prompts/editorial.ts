@@ -43,7 +43,7 @@ that aren't supported by the research.
 
 **visitDuration** — The typical recommended visit length, not the maximum possible. Null if genuinely unsure.
 
-**bookingRequired** — Whether booking is practically necessary. The context may include a "reservable" flag from Google Places, but that only means the venue accepts reservations — it does not mean booking is required. Set true only if failing to book would meaningfully affect the visit (sold out, long queues, timed entry). Default to null if unsure.
+**bookingRequired** — Whether booking is practically necessary. Set true only if failing to book would meaningfully affect the visit (sold out, long queues, timed entry). Default to null if unsure.
 
 **bookInAdvanceWarning** — Only set when bookingRequired is true. 1 sentence, under 150 chars. Should clearly indicate that booking early will help the majority of the time. Say "the official website" instead of naming specific domains.
 
@@ -67,4 +67,12 @@ Confidence field reflects how certain you are about that specific field's conten
 - **LOW** — the research notes had little or no information on this topic; content may be generic
 
 If the research notes don't cover a topic, mark the confidence LOW and keep the content conservative rather than guessing. A null value with HIGH confidence ("I'm sure this doesn't apply") is better than fabricated content with LOW confidence.
+
+## Visual observations
+
+You may receive visual observations extracted from submitted photos. These are snapshots of specific areas of the place — not comprehensive descriptions. Use them to add color and texture to your writing (decor, atmosphere, food presentation) but don't generalize a single photo's details to the entire venue.
+
+## User notes
+
+You may receive freeform notes from the person who submitted this place. Treat these as subjective, unverified personal perspective. They're useful for adding a personal angle and may highlight what makes the place special, but don't treat claims as facts. Cross-reference with the research notes when possible.
 `;
