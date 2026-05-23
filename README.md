@@ -1,8 +1,23 @@
-# ScribeKit
+<p align="center">
+  <h1 align="center">ScribeKit</h1>
+  <p align="center">
+    Multi-agent content generation pipeline for travel places
+    <br />
+    Built with LangGraph + LangChain + Claude
+  </p>
+</p>
 
-AI-powered multi-agent content generation toolkit.
+<p align="center">
+  <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#how-it-works">How It Works</a> &middot;
+  <a href="#usage">Usage</a> &middot;
+  <a href="#output">Output</a> &middot;
+  <a href="#project-structure">Project Structure</a>
+</p>
 
-ScribeKit uses a multi-agent pipeline (research → editorial) to generate structured, fact-grounded content. The research agent browses the web to gather real information, then the editorial agent writes polished content conforming to a strict output schema.
+---
+
+ScribeKit takes a place submission — name, city, country, optional photos and notes — and runs it through a four-agent pipeline that verifies the place via Google Places, researches it from the web, and produces structured editorial content ready for consumption.
 
 ## Quick Start
 
@@ -10,17 +25,51 @@ ScribeKit uses a multi-agent pipeline (research → editorial) to generate struc
 npm install
 ```
 
-Create a `.env` file with your API key:
+Create a `.env` file with your API keys:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_PLACES_API_KEY=...
+```
+
+Run the pipeline:
+
+```bash
+npm run dev -- generate --input examples/cli-input.json --output result.json
+```
+
+## How It Works
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+START → (has images?) → Image Analysis → Identification → (confidence ≥ MEDIUM?) → Research → Editorial → END
+                      → Identification ──────────────────────────────────────────────────────┘
+                                                          → END (LOW/NONE confidence)
 ```
+
+The pipeline has two conditional gates:
+
+1. **Image gate** — if the submission includes image URLs, the image analysis agent runs first to filter photos and extract visual cues. Otherwise, it skips straight to identification.
+2. **Confidence gate** — the identification agent verifies the place via Google Places and assigns a confidence level. Only VERY_HIGH, HIGH, or MEDIUM proceed to research and editorial. LOW or NONE terminates early with an error.
+
+### Agents
+
+| Agent | Model | Role |
+|-------|-------|------|
+| **Image Analysis** | `claude-haiku-4-5` (vision) | Filters submitted photos for relevance, extracts identification cues (signage, venue type, cuisine) and visual summaries (atmosphere, decor, vibe) |
+| **Identification** | `claude-haiku-4-5` | Confirms the place exists via the `google_places` tool, returns verified details (address, coordinates, phone, website, hours, pricing) |
+| **Research** | `claude-haiku-4-5` | Gathers factual information using the `fetch_url` tool — practical details, history, visitor experience, seasonal tips |
+| **Editorial** | `claude-sonnet-4-6` | Writes structured editorial content from research notes, visual context, and user notes |
+
+## Usage
 
 ### CLI
 
 ```bash
-# Generate content for a place
-npx tsx src/cli.ts generate --input examples/the-edge.json --output result.json
+# Basic — place name, city, country
+npm run dev -- generate --input examples/cli-input.json --output result.json
+
+# With images and notes
+npm run dev -- generate --input examples/influencer-submission.json --output result.json
 ```
 
 ### Library
@@ -29,54 +78,88 @@ npx tsx src/cli.ts generate --input examples/the-edge.json --output result.json
 import { generate } from "scribekit";
 
 const result = await generate({
-  placeName: "The Edge",
-  destinationName: "New York",
-  country: "United States",
-  address: "30 Hudson Yards, New York, NY 10001, USA",
-  latitude: 40.7534,
-  longitude: -74.0011,
+  placeName: "Ichiran Ramen",
+  destinationName: "Tokyo",
+  country: "Japan",
+  address: "1-22-7 Jinnan, Shibuya",               // optional hint
+  imageUrls: ["https://example.com/ramen.jpg"],     // optional, up to 5
+  notes: "Best tonkotsu ramen I've ever had.",      // optional freeform
 });
-
-console.log(result.editorialContent);
 ```
 
-## Architecture
+### Input
 
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `placeName` | `string` | Yes | Name of the place |
+| `destinationName` | `string` | Yes | City or destination |
+| `country` | `string` | Yes | Country |
+| `address` | `string \| null` | No | Address hint (overridden by Google Places) |
+| `imageUrls` | `string[]` | No | Up to 5 image URLs |
+| `notes` | `string` | No | Freeform user notes |
+
+## Output
+
+The pipeline returns a `GenerateResult` with verified place details, research notes, and structured editorial content:
+
+```ts
+{
+  // Verified by Google Places
+  placeName, destinationName, country, address,
+  latitude, longitude, phone, website,
+  priceLevel, openingHours, accessibilityOptions,
+
+  // Pipeline results
+  confidence,          // "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "NONE"
+  researchNotes,       // compiled research brief
+  researchSources,     // URLs visited during research
+  editorialContent,    // structured editorial (tagline, description, moods, tips, etc.)
+  filteredImageUrls,   // images that passed the relevance filter
+  errors,              // accumulated errors from any stage
+  generatedAt,         // ISO timestamp
+}
 ```
-Input JSON → Research Agent (Claude Haiku) → Editorial Agent (Claude Sonnet) → Output JSON
-```
 
-- **Research Agent** — browses the web with the `fetch_url` tool, gathers factual information
-- **Editorial Agent** — writes structured editorial content based on research notes
+The `editorialContent` object includes: tagline, description, whyVisit, neighbourhood, localTips, whatToBring, visitDuration, bookingRequired, dressCode, indoorOutdoor, weatherDependent, seasonalTips, moods, categories, and per-field confidence levels.
 
-Built on [LangGraph](https://github.com/langchain-ai/langgraphjs) for agent orchestration.
+## Security
 
-## Testing
+URL fetching (both the research tool and image fetcher) includes layered SSRF protection:
+
+- HTTPS-only, no credentials in URLs, no redirects
+- DNS resolution with private/internal IP blocking (IPv4, IPv6, IPv4-mapped IPv6)
+- Cloud metadata IP blocking (169.254.169.254, etc.)
+- Response size caps and HTML stripping
+
+## Development
 
 ```bash
-npm test
+npm run build          # Build with tsup (ESM)
+npm test               # Run tests (91 tests)
+npm run lint           # ESLint
 ```
 
 ## Project Structure
 
 ```
 src/
-  index.ts              # Library entry — generate() function
-  cli.ts                # CLI entry point
-  context.ts            # Input schema (Zod)
-  graph.ts              # LangGraph workflow
+  index.ts                    # Library entry — generate()
+  cli.ts                      # CLI entry point
+  context.ts                  # Input schema (Zod) + confidence levels
+  state.ts                    # LangGraph Annotation state + PlaceDetails
+  graph.ts                    # StateGraph — nodes + conditional edges
   agents/
-    research-agent.ts   # Web research agent
-    editorial-agent.ts  # Editorial writing agent
-  prompts/
-    research.ts         # Research agent system prompt
-    editorial.ts        # Editorial agent system prompt
+    image-analysis-agent.ts   # Image filtering + visual extraction
+    identification-agent.ts   # Google Places verification
+    research-agent.ts         # Web research
+    editorial-agent.ts        # Editorial generation
+  prompts/                    # System prompts for each agent
   tools/
-    fetch-url.ts        # URL fetching with HTML parsing
+    fetch-url.ts              # Secure URL fetcher + HTML stripping
+    google-places.ts          # Google Places API text search
   helpers/
-    url-validator.ts    # SSRF-safe URL validation
-examples/
-  the-edge.json         # Example input
+    image-fetcher.ts          # Image fetch + base64 conversion
+    url-validator.ts          # SSRF-safe URL validation
 ```
 
 ## License
