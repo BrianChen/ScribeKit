@@ -1,23 +1,13 @@
 #!/usr/bin/env node
-//
-// Usage:
-//   npm run dev -- generate --input examples/cli-input.json --output result.json
-//   npm run dev -- generate -i examples/cli-input.json
-//
-// Input JSON fields:
-//   placeName        (required) — name of the place
-//   destinationName  (required) — city or destination name
-//   country          (required) — country name
-//   address          (optional) — street address hint
-//   imageUrls        (optional) — array of image URLs, max 5
-//   notes            (optional) — freeform notes
-//
 import "dotenv/config";
 import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { Command } from "commander";
 import { generate } from "./index";
 import { PASSING_CONFIDENCE, type ConfidenceLevel } from "./context";
+import { logger } from "./logger";
+
+const cliLog = logger.child({ layer: "App::CLI", agent: "" });
 
 const program = new Command();
 
@@ -38,33 +28,37 @@ program
     const input = JSON.parse(readFileSync(inputPath, "utf-8"));
 
     if (!input.placeName || !input.destinationName) {
-      console.error("Input JSON must include placeName and destinationName.");
+      cliLog.error({ event: "failed", errors: ["Input JSON must include placeName and destinationName."] });
       process.exit(1);
     }
 
     if (input.imageUrls && input.imageUrls.length > 5) {
-      console.error("Maximum 5 image URLs allowed.");
+      cliLog.error({ event: "failed", errors: ["Maximum 5 image URLs allowed."] });
       process.exit(1);
     }
 
-    console.log(`Generating content for: ${input.placeName} (${input.destinationName})...`);
-    if (input.imageUrls?.length) {
-      console.log(`  Processing ${input.imageUrls.length} image(s)...`);
-    }
-    console.log();
+    cliLog.info({
+      event: "input_loaded",
+      placeName: input.placeName,
+      destinationName: input.destinationName,
+      imageCount: input.imageUrls?.length ?? 0,
+    });
 
     const result = await generate(input);
 
     if (result.errors.length > 0) {
-      console.error(`\nErrors: ${result.errors.join("\n")}`);
+      cliLog.warn({ event: "failed", errors: result.errors });
     }
 
     if (!PASSING_CONFIDENCE.has(result.confidence as ConfidenceLevel)) {
-      console.error(`\nPlace could not be confirmed (confidence: ${result.confidence}). Pipeline stopped.`);
+      cliLog.error({
+        event: "failed",
+        errors: [`Place could not be confirmed (confidence: ${result.confidence}). Pipeline stopped.`],
+      });
     }
 
     writeFileSync(outputPath, JSON.stringify(result, null, 2));
-    console.log(`\nOutput written to ${outputPath}`);
+    cliLog.info({ event: "output_written", path: outputPath });
   });
 
 program.parse();

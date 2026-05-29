@@ -1,5 +1,7 @@
 import { graph } from "./graph";
 import { Context, type ConfidenceLevel } from "./context";
+import { createPipelineLogger } from "./logger";
+import { PinoCallbackHandler } from "./logging/callback-handler";
 export { EditorialOutput } from "./agents/editorial-agent";
 
 export interface GenerateInput {
@@ -34,15 +36,30 @@ export interface GenerateResult {
 
 export async function generate(input: GenerateInput): Promise<GenerateResult> {
   const parsed = Context.parse(input);
+  const pipelineLog = createPipelineLogger(parsed);
+  const callbackHandler = new PinoCallbackHandler(pipelineLog);
+
+  pipelineLog.info({
+    event: "pipeline_start",
+    placeName: parsed.placeName,
+    destinationName: parsed.destinationName,
+    country: parsed.country,
+    imageCount: parsed.imageUrls?.length ?? 0,
+    notes: parsed.notes ? `${parsed.notes.slice(0, 100)}${parsed.notes.length > 100 ? "..." : ""}` : null,
+  });
+
+  const startTime = Date.now();
 
   const result = await graph.invoke(
     {},
-    { configurable: { thread_id: `${parsed.placeName}--${parsed.destinationName}`, ...parsed } }
+    {
+      callbacks: [callbackHandler],
+      configurable: { thread_id: `${parsed.placeName}--${parsed.destinationName}`, ...parsed },
+    },
   );
 
   const placeDetails = result.placeDetails;
-
-  return {
+  const output: GenerateResult = {
     placeName: placeDetails?.placeName ?? parsed.placeName,
     destinationName: placeDetails?.destinationName ?? parsed.destinationName,
     country: placeDetails?.country ?? parsed.country,
@@ -62,4 +79,25 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
     errors: result.errors,
     generatedAt: new Date().toISOString(),
   };
+
+  const duration = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+
+  if (output.errors.length > 0) {
+    pipelineLog.warn({
+      event: "pipeline_end",
+      duration,
+      confidence: output.confidence,
+      errorCount: output.errors.length,
+      errors: output.errors,
+    });
+  } else {
+    pipelineLog.info({
+      event: "pipeline_end",
+      duration,
+      confidence: output.confidence,
+      errorCount: 0,
+    });
+  }
+
+  return output;
 }

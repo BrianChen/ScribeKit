@@ -17,6 +17,15 @@ export interface FetchedImage {
   mediaType: string;
 }
 
+export interface ImageFetchResult {
+  url: string;
+  status: "success" | "error";
+  image?: FetchedImage;
+  mediaType?: string;
+  bytes?: number;
+  reason?: string;
+}
+
 export async function fetchImage(url: string): Promise<FetchedImage> {
   const validation = await validateUrl(url);
   if (!validation.safe) {
@@ -64,19 +73,24 @@ export async function fetchImage(url: string): Promise<FetchedImage> {
   return { url, base64, mediaType: contentType };
 }
 
-export async function fetchImages(urls: string[]): Promise<{ images: FetchedImage[]; errors: string[] }> {
-  const images: FetchedImage[] = [];
-  const errors: string[] = [];
-
+export async function fetchImages(urls: string[]): Promise<ImageFetchResult[]> {
   const results = await Promise.allSettled(urls.map(fetchImage));
 
-  for (const result of results) {
+  return results.map((result, i) => {
     if (result.status === "fulfilled") {
-      images.push(result.value);
-    } else {
-      errors.push(result.reason.message);
+      const img = result.value;
+      return {
+        url: urls[i],
+        status: "success" as const,
+        image: img,
+        mediaType: img.mediaType,
+        bytes: Buffer.byteLength(img.base64, "base64"),
+      };
     }
-  }
-
-  return { images, errors };
+    return {
+      url: urls[i],
+      status: "error" as const,
+      reason: result.reason.message,
+    };
+  });
 }

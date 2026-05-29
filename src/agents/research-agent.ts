@@ -3,6 +3,7 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import { z } from 'zod';
 import fetchUrl from '../tools/fetch-url';
 
+import { createNodeLogger, truncateStrings } from '../logger';
 import { RESEARCH_PROMPT } from '../prompts/research';
 import { type GraphState, type NodeConfig } from '../state';
 
@@ -24,7 +25,9 @@ const researchAgent = createAgent({
 });
 
 export const researchNode = async (state: GraphState, config: NodeConfig) => {
-  console.log("  [research] starting...");
+  const log = createNodeLogger("LangGraph::Node", "research", config);
+  log.info({ event: "node_start" });
+  const startTime = Date.now();
 
   const placeDetails = state.placeDetails;
   const configurable = config.configurable ?? {};
@@ -45,10 +48,12 @@ export const researchNode = async (state: GraphState, config: NodeConfig) => {
     }],
   });
 
-  console.log("  [research] done");
-
-  return {
+  const stateUpdate = {
     researchNotes: result.structuredResponse.researchNotes,
     researchSources: result.structuredResponse.researchSources,
   };
+  log.info({ event: "state_update", ...truncateStrings(stateUpdate) });
+  log.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
+
+  return stateUpdate;
 };

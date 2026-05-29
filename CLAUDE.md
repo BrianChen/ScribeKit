@@ -18,7 +18,7 @@ node --test --experimental-strip-types src/tools/fetch-url.test.ts
 
 ## Environment
 
-Requires `ANTHROPIC_API_KEY` and `GOOGLE_PLACES_API_KEY` in `.env` (see `.env.example`). Loaded by `dotenv`.
+Requires `ANTHROPIC_API_KEY`, `GOOGLE_PLACES_API_KEY`, and optional `LOG_LEVEL` (default: `info`) in `.env` (see `.env.example`). Loaded by `dotenv`.
 
 ## Architecture
 
@@ -58,9 +58,19 @@ The `fetch_url` tool and image fetcher share layered SSRF protection (`helpers/u
 - Cloud metadata IP blocking (169.254.169.254, etc.)
 - Response capped at 50k chars after HTML stripping via cheerio
 
+### Logging
+
+Structured logging via Pino with dual transports: `pino-pretty` to terminal (colorized), JSON to `logs/scribekit.log` (gitignored). Two parallel paths:
+
+- **Callback handler** (`src/logging/callback-handler.ts`) — extends `BaseTracer`, auto-captures LLM and tool lifecycle events (`LangGraph::LLM`, `LangGraph::Tool`). Created in `generate()`, passed via `graph.invoke({ callbacks: [...] })`.
+- **Node-level logging** (`src/logger.ts`) — manual Pino child loggers in node wrappers, routing functions, and `generate()`. Covers `App::Pipeline`, `App::Routing`, `App::Node`, `App::CLI`, and `LangGraph::Node` layers.
+
+`createNodeLogger(layer, agent, config)` creates a child logger with `layer`, `agent`, `threadId`, `placeName`, `destinationName`, and `country` bound from `config.configurable`.
+
 ### Key details
 
 - Thread ID for checkpointer is `{placeName}--{destinationName}`
 - Output is JSON-only, no database coupling
 - Prompts live in `src/prompts/` and contain detailed field-level writing guidance
 - Address, coordinates, phone, website, priceLevel, openingHours, and accessibilityOptions come from Google Places (not user input)
+- Log output to terminal via `pino-pretty`, to file at `logs/scribekit.log`; level controlled by `LOG_LEVEL` env var

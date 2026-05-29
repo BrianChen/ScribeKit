@@ -2,6 +2,7 @@ import { createAgent, providerStrategy, toolCallLimitMiddleware } from "langchai
 import { ChatAnthropic } from "@langchain/anthropic";
 import { z } from "zod";
 import { CONFIDENCE_LEVELS, PASSING_CONFIDENCE } from "../context";
+import { createNodeLogger, truncateStrings } from "../logger";
 import { IDENTIFICATION_PROMPT } from "../prompts/identification";
 import { type GraphState, type NodeConfig } from "../state";
 import googlePlaces from "../tools/google-places";
@@ -38,7 +39,9 @@ const identificationAgent = createAgent({
 });
 
 export const identificationNode = async (state: GraphState, config: NodeConfig) => {
-  console.log("  [identification] starting...");
+  const log = createNodeLogger("LangGraph::Node", "identification", config);
+  log.info({ event: "node_start" });
+  const startTime = Date.now();
 
   const { placeName, destinationName, country, address } = config.configurable ?? {};
   const identificationCues = state.identificationCues || "";
@@ -60,18 +63,23 @@ export const identificationNode = async (state: GraphState, config: NodeConfig) 
 
   const response = result.structuredResponse;
 
-  console.log(`  [identification] confidence: ${response.confidence}`);
-
   if (!PASSING_CONFIDENCE.has(response.confidence)) {
-    return {
+    const stateUpdate = {
       confidence: response.confidence,
       placeDetails: null,
       errors: [`Place could not be confirmed (confidence: ${response.confidence})`],
     };
+    log.warn({ event: "state_update", ...truncateStrings(stateUpdate) });
+    log.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
+    return stateUpdate;
   }
 
-  return {
+  const stateUpdate = {
     confidence: response.confidence,
     placeDetails: response.placeDetails,
   };
+  log.info({ event: "state_update", ...truncateStrings(stateUpdate as Record<string, unknown>) });
+  log.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
+
+  return stateUpdate;
 };

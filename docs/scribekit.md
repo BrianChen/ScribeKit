@@ -6,8 +6,9 @@ title: "AI Editorial content generation workflow"
 ---
 
 ## Prerequisites
-- `@langchain/langgraph`, `@langchain/anthropic`, `langchain`, `cheerio` installed
+- `@langchain/langgraph`, `@langchain/anthropic`, `langchain`, `cheerio`, `pino`, `pino-pretty` installed
 - `ANTHROPIC_API_KEY` and `GOOGLE_PLACES_API_KEY` in `.env`
+- Optional: `LOG_LEVEL` in `.env` (default: `info`)
 
 ## Overview
 
@@ -21,11 +22,14 @@ src/
   graph.ts                # LangGraph StateGraph — wires nodes + conditional edges
   context.ts              # Zod schema for immutable context + confidence levels
   state.ts                # LangGraph Annotation state + PlaceDetails interface
+  logger.ts               # Singleton Pino instance, createNodeLogger(), createPipelineLogger(), layer/event types
   agents/
     image-analysis-agent.ts   # Image analysis agent + imageAnalysisNode wrapper
     identification-agent.ts   # Place identification agent + identificationNode wrapper
     research-agent.ts         # Research agent + researchNode wrapper
     editorial-agent.ts        # Editorial agent + editorialNode wrapper
+  logging/
+    callback-handler.ts   # PinoCallbackHandler extending BaseTracer — logs LLM and tool events
   tools/
     fetch-url.ts          # fetch_url tool — secure fetch + cheerio HTML stripping
     google-places.ts      # google_places tool — Google Places API text search
@@ -215,6 +219,32 @@ When the graph ends early due to low confidence:
 - `confidence` tells the caller why it stopped.
 - `errors` contains a message explaining the place couldn't be confirmed.
 
+## Logging
+
+Structured logging via Pino with dual transports: colorized `pino-pretty` to terminal, structured JSON to `logs/scribekit.log` (gitignored). Log level set via `LOG_LEVEL` env var (default: `info`).
+
+### Hybrid approach
+
+Two parallel paths cover all events:
+
+1. **`PinoCallbackHandler`** (`src/logging/callback-handler.ts`) — extends `BaseTracer` from `@langchain/core`. Receives LLM and tool lifecycle events automatically from LangGraph. Walks the `runMap` ancestor chain to resolve the containing agent name. Created in `generate()` and passed via `graph.invoke({ callbacks: [...] })` — auto-propagated to all agents and tools.
+
+2. **Manual node-level logging** — each node wrapper, routing function, and `generate()` calls `createNodeLogger(layer, agent, config)` from `src/logger.ts` to get a child logger with `layer`, `agent`, `threadId`, `placeName`, `destinationName`, and `country` pre-bound.
+
+### Layers and events
+
+| Layer | Origin | Events |
+|-------|--------|--------|
+| `App::Pipeline` | manual | `pipeline_start`, `pipeline_end` |
+| `App::Routing` | manual | `routing_decision` |
+| `App::Node` | manual | `image_fetch`, `image_filter` |
+| `App::CLI` | manual | `input_loaded`, `output_written`, `failed` |
+| `LangGraph::Node` | manual | `node_start`, `node_end`, `state_update` |
+| `LangGraph::LLM` | callback | `llm_start`, `llm_end`, `llm_error` |
+| `LangGraph::Tool` | callback | `tool_start`, `tool_end`, `tool_error` |
+
+Large string fields in `state_update` are truncated with char count via `truncateStrings()`.
+
 ## Key design decisions
 - **Agents wrapped in node functions** — `createAgent` returns a `ReactAgent` which can't be passed directly to `StateGraph.addNode()`. The node function adapts between graph state and the agent's message-based interface.
 - **Context is a plain `z.object()`** — `createAgent`'s `contextSchema` expects `AnyAnnotationRoot | InteropZodObject`, not `StateSchema`.
@@ -251,8 +281,6 @@ Freeform notes may need a filtering/cleaning step before being passed to the edi
 - Do not implement until input format/use case is well defined
 
 ### V2
-- **Logging:** 
-No structured logging exists in the pipeline. Each agent node and key operations (image fetching, Google Places calls, confidence gating, early termination) should emit logs with timing, input/output summaries, and error details.
 - **Error states review:** 
 The pipeline has several error paths that need review: image fetch failures (partial vs total), Google Places API errors, agent invocation failures, and early termination (LOW/NONE confidence). Should define a clear error taxonomy and decide on retry vs fail-fast semantics for each category.
 - **Fallback for places not on Google Places:** 

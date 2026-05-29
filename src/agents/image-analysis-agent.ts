@@ -5,6 +5,7 @@ import { z } from "zod";
 import { IMAGE_ANALYSIS_PROMPT } from "../prompts/image-analysis";
 import { type GraphState, type NodeConfig } from "../state";
 import { fetchImages, type FetchedImage } from "../helpers/image-fetcher";
+import { createNodeLogger, truncateStrings } from "../logger";
 
 export const ImageAnalysisOutput = z.object({
   images: z.array(z.object({
@@ -45,28 +46,38 @@ function buildImageMessage(images: FetchedImage[]): HumanMessage {
 type ImageResult = z.infer<typeof ImageAnalysisOutput>["images"][number];
 
 export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) => {
+  const lgLog = createNodeLogger("LangGraph::Node", "image-analysis", config);
+  const appLog = createNodeLogger("App::Node", "image-analysis", config);
   const imageUrls: string[] = (config.configurable?.imageUrls as string[]) ?? [];
 
+  lgLog.info({ event: "node_start" });
+
   if (imageUrls.length === 0) {
-    return {
-      visualSummary: "",
-      identificationCues: "",
-      filteredImageUrls: [],
-    };
+    const stateUpdate = { visualSummary: "", identificationCues: "", filteredImageUrls: [] };
+    lgLog.info({ event: "state_update", ...stateUpdate });
+    lgLog.info({ event: "node_end" });
+    return stateUpdate;
   }
 
-  console.log(`  [image-analysis] analyzing ${imageUrls.length} image(s)...`);
+  const startTime = Date.now();
+  const fetchResults = await fetchImages(imageUrls);
 
-  const { images: fetchedImages, errors: fetchErrors } = await fetchImages(imageUrls);
+  for (const r of fetchResults) {
+    if (r.status === "success") {
+      appLog.info({ event: "image_fetch", url: r.url, status: r.status, mediaType: r.mediaType, bytes: r.bytes });
+    } else {
+      appLog.warn({ event: "image_fetch", url: r.url, status: r.status, reason: r.reason });
+    }
+  }
+
+  const fetchedImages = fetchResults.filter((r) => r.status === "success" && r.image).map((r) => r.image!);
+  const fetchErrors = fetchResults.filter((r) => r.status === "error").map((r) => `${r.url}: ${r.reason}`);
 
   if (fetchedImages.length === 0) {
-    console.log("  [image-analysis] no images could be fetched");
-    return {
-      visualSummary: "",
-      identificationCues: "",
-      filteredImageUrls: [],
-      errors: fetchErrors,
-    };
+    const stateUpdate = { visualSummary: "", identificationCues: "", filteredImageUrls: [] as string[], errors: fetchErrors };
+    lgLog.info({ event: "state_update", ...truncateStrings(stateUpdate) });
+    lgLog.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
+    return stateUpdate;
   }
 
   const result = await imageAnalysisAgent.invoke({
@@ -76,12 +87,19 @@ export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) 
   const response = result.structuredResponse;
   const kept = response.images.filter((img: ImageResult) => img.keep);
 
-  console.log(`  [image-analysis] kept ${kept.length}/${fetchedImages.length} images`);
+  for (const img of response.images) {
+    appLog.info({ event: "image_filter", url: img.url, keep: img.keep, reason: img.reason });
+  }
 
-  return {
+  const stateUpdate = {
     visualSummary: kept.map((img: ImageResult) => img.visualSummary).filter(Boolean).join("\n\n"),
     identificationCues: kept.map((img: ImageResult) => img.identificationCues).filter(Boolean).join("\n\n"),
     filteredImageUrls: kept.map((img: ImageResult) => img.url),
     errors: fetchErrors,
   };
+
+  lgLog.info({ event: "state_update", ...truncateStrings(stateUpdate) });
+  lgLog.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
+
+  return stateUpdate;
 };

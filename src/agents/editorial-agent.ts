@@ -2,6 +2,7 @@ import { createAgent, providerStrategy } from "langchain";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { z } from "zod";
 
+import { createNodeLogger, truncateStrings } from '../logger';
 import { EDITORIAL_PROMPT } from '../prompts/editorial'
 import { type GraphState, type NodeConfig } from '../state'
 
@@ -62,7 +63,9 @@ const editorialAgent = createAgent({
 });
 
 export const editorialNode = async (state: GraphState, config: NodeConfig) => {
-  console.log("  [editorial] starting...");
+  const log = createNodeLogger("LangGraph::Node", "editorial", config);
+  log.info({ event: "node_start" });
+  const startTime = Date.now();
 
   const visualSummary = state.visualSummary || "";
   const notes = (config.configurable?.notes as string) || "";
@@ -84,9 +87,11 @@ export const editorialNode = async (state: GraphState, config: NodeConfig) => {
     }],
   });
 
-  console.log("  [editorial] done");
-
-  return {
+  const stateUpdate = {
     editorialContent: result.structuredResponse,
   };
+  log.info({ event: "state_update", ...truncateStrings(stateUpdate as Record<string, unknown>) });
+  log.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
+
+  return stateUpdate;
 };
