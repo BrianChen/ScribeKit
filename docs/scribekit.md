@@ -296,7 +296,10 @@ The pipeline has several error paths that need review: image fetch failures (par
 New, informal, or unlisted places will be rejected under the current gate logic. A future iteration could have the research agent act as a secondary verification step — searching the web for evidence the place exists and upgrading the confidence if found.
 - **Factual fields redistribution:** 
 Several editorial output fields are factual rather than creative (neighbourhood, visitDuration, bookingRequired, bookInAdvanceWarning, dressCode, indoorOutdoor, weatherDependent, seasonalTips). These may be better owned by the research agent, which has direct access to factual sources.
-
+- **Editorial themes:** 
+Add editorial themes
+- **Prompt testing:**
+Test and refactor prompts
 ### V3
 - **Video input:** 
 Would require audio transcription (Whisper, Deepgram) and key frame extraction. Deferred — start with images first.
