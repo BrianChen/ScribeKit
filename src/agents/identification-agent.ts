@@ -2,7 +2,7 @@ import { createAgent, providerStrategy, toolCallLimitMiddleware } from "langchai
 import { ChatAnthropic } from "@langchain/anthropic";
 import { z } from "zod";
 import { CONFIDENCE_LEVELS, PASSING_CONFIDENCE } from "../context";
-import { createNodeLogger, truncateStrings } from "../logger";
+import { createNodeLogger } from "../logger";
 import { IDENTIFICATION_PROMPT } from "../prompts/identification";
 import { type GraphState, type NodeConfig } from "../state";
 import googlePlaces from "../tools/google-places";
@@ -21,10 +21,15 @@ export const IdentificationOutput = z.object({
     priceLevel: z.string().nullable(),
     openingHours: z.object({
       weekdayDescriptions: z.array(z.string()),
-    }).nullable(),
-    accessibilityOptions: z.record(z.boolean()).nullable(),
-  }).nullable(),
-});
+    }).strict().nullable(),
+    accessibilityOptions: z.object({
+      wheelchairAccessibleEntrance: z.boolean().optional(),
+      wheelchairAccessibleParking: z.boolean().optional(),
+      wheelchairAccessibleRestroom: z.boolean().optional(),
+      wheelchairAccessibleSeating: z.boolean().optional(),
+    }).strict().nullable(),
+  }).strict().nullable(),
+}).strict();
 
 const identificationAgent = createAgent({
   model: new ChatAnthropic({
@@ -39,7 +44,7 @@ const identificationAgent = createAgent({
 });
 
 export const identificationNode = async (state: GraphState, config: NodeConfig) => {
-  const log = createNodeLogger("LangGraph::Node", "identification", config);
+  const log = createNodeLogger("LangGraph::Node", "identification");
   log.info({ event: "node_start" });
   const startTime = Date.now();
 
@@ -69,7 +74,7 @@ export const identificationNode = async (state: GraphState, config: NodeConfig) 
       placeDetails: null,
       errors: [`Place could not be confirmed (confidence: ${response.confidence})`],
     };
-    log.warn({ event: "state_update", ...truncateStrings(stateUpdate) });
+    log.warn({ event: "state_update", ...stateUpdate });
     log.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
     return stateUpdate;
   }
@@ -78,7 +83,7 @@ export const identificationNode = async (state: GraphState, config: NodeConfig) 
     confidence: response.confidence,
     placeDetails: response.placeDetails,
   };
-  log.info({ event: "state_update", ...truncateStrings(stateUpdate as Record<string, unknown>) });
+  log.info({ event: "state_update", ...stateUpdate });
   log.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
 
   return stateUpdate;

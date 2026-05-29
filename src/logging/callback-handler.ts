@@ -3,18 +3,50 @@ import { BaseTracer, type Run } from "@langchain/core/tracers/base";
 
 const MAX_OUTPUT_LENGTH = 500;
 
-function truncateOutput(value: unknown): unknown {
-  if (typeof value === "string" && value.length > MAX_OUTPUT_LENGTH) {
-    return `${value.slice(0, MAX_OUTPUT_LENGTH)}...(${value.length} chars)`;
-  }
-  return value;
-}
-
 function elapsed(run: Run): string {
   if (!run.end_time) return "";
   const ms = run.end_time - run.start_time;
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function resolveModelName(run: Run): string {
+  return (run.extra?.invocation_params?.model as string) ?? run.name;
+}
+
+function parseToolInput(inputs: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!inputs) return {};
+  const raw = inputs.input ?? inputs.url ?? inputs.query;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
+    } catch {
+      // not JSON, return as-is
+    }
+  }
+  return inputs;
+}
+
+function truncateContent(raw: unknown): unknown {
+  return typeof raw === "string" && raw.length > MAX_OUTPUT_LENGTH
+    ? `${raw.slice(0, MAX_OUTPUT_LENGTH)}...(${raw.length} chars)`
+    : raw;
+}
+
+function extractToolOutput(output: unknown): { status?: string; content?: unknown } {
+  if (!output || typeof output !== "object") return { status: undefined, content: output };
+  const o = output as Record<string, unknown>;
+  // ToolMessage instance: has content and tool_call_id as direct fields
+  if (typeof o.content !== "undefined" && typeof o.tool_call_id !== "undefined") {
+    return { status: o.status as string | undefined, content: truncateContent(o.content) };
+  }
+  // Serialized LangChain envelope: { lc, type, kwargs: { content, status } }
+  const kwargs = o.kwargs as Record<string, unknown> | undefined;
+  if (kwargs && typeof kwargs === "object") {
+    return { status: kwargs.status as string | undefined, content: truncateContent(kwargs.content) };
+  }
+  return { status: undefined, content: output };
 }
 
 export class PinoCallbackHandler extends BaseTracer {
@@ -47,12 +79,18 @@ export class PinoCallbackHandler extends BaseTracer {
 
   onLLMStart(run: Run): void {
     const agent = this.resolveAgentName(run);
+    const messages: unknown[] = run.inputs?.messages?.[0] ?? [];
+    const imageCount = messages.filter((m: unknown) => {
+      const content = (m as { kwargs?: { content?: unknown[] } })?.kwargs?.content;
+      return Array.isArray(content) && content.some((c: unknown) => (c as { type?: string })?.type === "image");
+    }).length;
     this.baseLogger.info({
       layer: "LangGraph::LLM",
       agent,
       event: "llm_start",
-      model: run.name,
-      messages: run.inputs,
+      model: resolveModelName(run),
+      messageCount: messages.length,
+      ...(imageCount > 0 && { imageCount }),
     });
   }
 
@@ -63,14 +101,9 @@ export class PinoCallbackHandler extends BaseTracer {
       layer: "LangGraph::LLM",
       agent,
       event: "llm_end",
-      model: run.name,
+      model: resolveModelName(run),
       latency: elapsed(run),
       tokens: tokenUsage,
-      response: truncateOutput(
-        run.outputs?.generations?.[0]?.[0]?.text ??
-        run.outputs?.generations?.[0]?.[0]?.message?.content ??
-        "",
-      ),
     });
   }
 
@@ -80,7 +113,7 @@ export class PinoCallbackHandler extends BaseTracer {
       layer: "LangGraph::LLM",
       agent,
       event: "llm_error",
-      model: run.name,
+      model: resolveModelName(run),
       error: run.error,
     });
   }
@@ -92,18 +125,23 @@ export class PinoCallbackHandler extends BaseTracer {
       agent,
       event: "tool_start",
       tool: run.name,
-      input: run.inputs,
+      input: parseToolInput(run.inputs),
     });
   }
 
   onToolEnd(run: Run): void {
     const agent = this.resolveAgentName(run);
+    const { status, content } = extractToolOutput(run.outputs?.output);
+    const input = parseToolInput(run.inputs);
+    const url = input.url ?? input.query;
     this.baseLogger.info({
       layer: "LangGraph::Tool",
       agent,
       event: "tool_end",
       tool: run.name,
-      output: truncateOutput(run.outputs?.output),
+      ...(url ? { url } : {}),
+      ...(status ? { status } : {}),
+      content,
     });
   }
 

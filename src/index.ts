@@ -1,8 +1,9 @@
 import { graph } from "./graph";
 import { Context, type ConfidenceLevel } from "./context";
-import { createPipelineLogger } from "./logger";
+import { createPipelineLogger, createCallbackLogger } from "./logger";
 import { PinoCallbackHandler } from "./logging/callback-handler";
 export { EditorialOutput } from "./agents/editorial-agent";
+export { MAX_IMAGE_COUNT, MAX_IMAGE_BYTES, ALLOWED_MEDIA_TYPES } from "./helpers/image-constraints";
 
 export interface GenerateInput {
   placeName: string;
@@ -36,8 +37,8 @@ export interface GenerateResult {
 
 export async function generate(input: GenerateInput): Promise<GenerateResult> {
   const parsed = Context.parse(input);
-  const pipelineLog = createPipelineLogger(parsed);
-  const callbackHandler = new PinoCallbackHandler(pipelineLog);
+  const pipelineLog = createPipelineLogger();
+  const callbackHandler = new PinoCallbackHandler(createCallbackLogger());
 
   pipelineLog.info({
     event: "pipeline_start",
@@ -45,7 +46,8 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
     destinationName: parsed.destinationName,
     country: parsed.country,
     imageCount: parsed.imageUrls?.length ?? 0,
-    notes: parsed.notes ? `${parsed.notes.slice(0, 100)}${parsed.notes.length > 100 ? "..." : ""}` : null,
+    ...(parsed.imageUrls?.length && { imageUrls: parsed.imageUrls }),
+    ...(parsed.notes && { notes: parsed.notes }),
   });
 
   const startTime = Date.now();

@@ -22,7 +22,7 @@ src/
   graph.ts                # LangGraph StateGraph — wires nodes + conditional edges
   context.ts              # Zod schema for immutable context + confidence levels
   state.ts                # LangGraph Annotation state + PlaceDetails interface
-  logger.ts               # Singleton Pino instance, createNodeLogger(), createPipelineLogger(), layer/event types
+  logger.ts               # Singleton Pino instance, createNodeLogger(), createPipelineLogger(), createCallbackLogger(), layer/event types
   agents/
     image-analysis-agent.ts   # Image analysis agent + imageAnalysisNode wrapper
     identification-agent.ts   # Place identification agent + identificationNode wrapper
@@ -47,7 +47,7 @@ src/
 
 ### CLI
 ```bash
-npx scribekit generate --input input.json --output result.json
+npx scribekit generate --input input.json --output workspace/result.json
 ```
 
 ### Library
@@ -221,15 +221,19 @@ When the graph ends early due to low confidence:
 
 ## Logging
 
-Structured logging via Pino with dual transports: colorized `pino-pretty` to terminal, structured JSON to `logs/scribekit.log` (gitignored). Log level set via `LOG_LEVEL` env var (default: `info`).
+Structured logging via Pino with dual transports: colorized `pino-pretty` to terminal, structured JSON to `workspace/scribekit.log` (gitignored). Log level set via `LOG_LEVEL` env var (default: `info`).
 
 ### Hybrid approach
 
 Two parallel paths cover all events:
 
-1. **`PinoCallbackHandler`** (`src/logging/callback-handler.ts`) — extends `BaseTracer` from `@langchain/core`. Receives LLM and tool lifecycle events automatically from LangGraph. Walks the `runMap` ancestor chain to resolve the containing agent name. Created in `generate()` and passed via `graph.invoke({ callbacks: [...] })` — auto-propagated to all agents and tools.
+1. **`PinoCallbackHandler`** (`src/logging/callback-handler.ts`) — extends `BaseTracer` from `@langchain/core`. Receives LLM and tool lifecycle events automatically from LangGraph. Walks the `runMap` ancestor chain to resolve the containing agent name. Created in `generate()` via `createCallbackLogger()` and passed via `graph.invoke({ callbacks: [...] })` — auto-propagated to all agents and tools.
 
-2. **Manual node-level logging** — each node wrapper, routing function, and `generate()` calls `createNodeLogger(layer, agent, config)` from `src/logger.ts` to get a child logger with `layer`, `agent`, `threadId`, `placeName`, `destinationName`, and `country` pre-bound.
+2. **Manual node-level logging** — each node wrapper, routing function, and `generate()` calls `createNodeLogger(layer, agent)` from `src/logger.ts` to get a child logger with only `layer` and `agent` bound.
+
+### Context in logs
+
+Place context (`placeName`, `destinationName`, `country`, `imageUrls`, `notes`) is logged **once** as fields on the `pipeline_start` event — it is not bound to child loggers and does not repeat on every event.
 
 ### Layers and events
 
@@ -243,10 +247,15 @@ Two parallel paths cover all events:
 | `LangGraph::LLM` | callback | `llm_start`, `llm_end`, `llm_error` |
 | `LangGraph::Tool` | callback | `tool_start`, `tool_end`, `tool_error` |
 
-Large string fields in `state_update` are truncated with char count via `truncateStrings()`.
+### Callback handler details
+
+- `llm_start` / `llm_end` — logs actual model ID (from `run.extra.invocation_params.model`), token usage, latency. No response body.
+- `tool_start` — parses nested JSON input to extract clean `url` / `query` field.
+- `tool_end` — extracts `status` and `content` from the LangChain `ToolMessage` envelope. Content truncated at 500 chars.
 
 ## Key design decisions
 - **Agents wrapped in node functions** — `createAgent` returns a `ReactAgent` which can't be passed directly to `StateGraph.addNode()`. The node function adapts between graph state and the agent's message-based interface.
+- **Logging is context-free per event** — child loggers only bind `layer` and `agent`. Place context is a one-time emission at `pipeline_start`, keeping every other event log minimal.
 - **Context is a plain `z.object()`** — `createAgent`'s `contextSchema` expects `AnyAnnotationRoot | InteropZodObject`, not `StateSchema`.
 - **State uses `Annotation` API** — `StateSchema` is incompatible with Zod 3.x; `Annotation.Root()` works.
 - **Tools talk to the LLM, not to state** — tool results go back to the agent's message history. State only changes when a node function returns values.

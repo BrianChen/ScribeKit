@@ -8,7 +8,7 @@ import { State, type GraphState, type NodeConfig } from "./state";
 import { createNodeLogger } from "./logger";
 
 function routeAfterStart(_state: GraphState, config: NodeConfig): string {
-  const log = createNodeLogger("App::Routing", null, config);
+  const log = createNodeLogger("App::Routing", null);
   const imageUrls = (config.configurable?.imageUrls as string[]) ?? [];
 
   if (imageUrls.length > 0) {
@@ -33,7 +33,7 @@ function routeAfterStart(_state: GraphState, config: NodeConfig): string {
 }
 
 function routeAfterIdentification(state: GraphState, config: NodeConfig): string {
-  const log = createNodeLogger("App::Routing", null, config);
+  const log = createNodeLogger("App::Routing", null);
   const confidence = state.confidence as ConfidenceLevel;
 
   if (PASSING_CONFIDENCE.has(confidence)) {

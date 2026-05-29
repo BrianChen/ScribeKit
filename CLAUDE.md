@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev -- generate --input examples/cli-input.json --output result.json  # run CLI in dev mode
+npm run dev -- generate --input workspace/cli-input.json --output workspace/result.json  # run CLI in dev mode
 npm run build          # build with tsup (ESM, outputs to dist/)
 npm test               # run tests (node --test with --experimental-strip-types)
 npm run lint           # eslint src/
@@ -60,12 +60,12 @@ The `fetch_url` tool and image fetcher share layered SSRF protection (`helpers/u
 
 ### Logging
 
-Structured logging via Pino with dual transports: `pino-pretty` to terminal (colorized), JSON to `logs/scribekit.log` (gitignored). Two parallel paths:
+Structured logging via Pino with dual transports: `pino-pretty` to terminal (colorized), JSON to `workspace/scribekit.log` (gitignored). Two parallel paths:
 
 - **Callback handler** (`src/logging/callback-handler.ts`) — extends `BaseTracer`, auto-captures LLM and tool lifecycle events (`LangGraph::LLM`, `LangGraph::Tool`). Created in `generate()`, passed via `graph.invoke({ callbacks: [...] })`.
 - **Node-level logging** (`src/logger.ts`) — manual Pino child loggers in node wrappers, routing functions, and `generate()`. Covers `App::Pipeline`, `App::Routing`, `App::Node`, `App::CLI`, and `LangGraph::Node` layers.
 
-`createNodeLogger(layer, agent, config)` creates a child logger with `layer`, `agent`, `threadId`, `placeName`, `destinationName`, and `country` bound from `config.configurable`.
+`createNodeLogger(layer, agent)` creates a child logger with only `layer` and `agent` bound. `createPipelineLogger()` and `createCallbackLogger()` do the same for their respective layers. Place context (`placeName`, `destinationName`, `country`, `imageUrls`, `notes`) is logged once as fields on `pipeline_start` — not bound to child loggers.
 
 ### Key details
 
@@ -73,4 +73,4 @@ Structured logging via Pino with dual transports: `pino-pretty` to terminal (col
 - Output is JSON-only, no database coupling
 - Prompts live in `src/prompts/` and contain detailed field-level writing guidance
 - Address, coordinates, phone, website, priceLevel, openingHours, and accessibilityOptions come from Google Places (not user input)
-- Log output to terminal via `pino-pretty`, to file at `logs/scribekit.log`; level controlled by `LOG_LEVEL` env var
+- Log output to terminal via `pino-pretty`, to file at `workspace/scribekit.log`; level controlled by `LOG_LEVEL` env var

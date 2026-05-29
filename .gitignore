@@ -3,4 +3,4 @@ dist/
 .env
 *.tgz
 CLAUDE.local.md
-logs/
+workspace/

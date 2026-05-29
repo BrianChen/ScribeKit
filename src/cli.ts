@@ -41,7 +41,10 @@ program
       event: "input_loaded",
       placeName: input.placeName,
       destinationName: input.destinationName,
+      country: input.country,
       imageCount: input.imageUrls?.length ?? 0,
+      imageUrls: input.imageUrls,
+      notes: input.notes ?? null,
     });
 
     const result = await generate(input);

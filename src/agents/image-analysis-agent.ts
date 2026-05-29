@@ -5,7 +5,7 @@ import { z } from "zod";
 import { IMAGE_ANALYSIS_PROMPT } from "../prompts/image-analysis";
 import { type GraphState, type NodeConfig } from "../state";
 import { fetchImages, type FetchedImage } from "../helpers/image-fetcher";
-import { createNodeLogger, truncateStrings } from "../logger";
+import { createNodeLogger } from "../logger";
 
 export const ImageAnalysisOutput = z.object({
   images: z.array(z.object({
@@ -14,8 +14,8 @@ export const ImageAnalysisOutput = z.object({
     reason: z.string(),
     identificationCues: z.string(),
     visualSummary: z.string(),
-  })),
-});
+  }).strict()),
+}).strict();
 
 const imageAnalysisAgent = createAgent({
   model: new ChatAnthropic({
@@ -30,14 +30,13 @@ const imageAnalysisAgent = createAgent({
 function buildImageMessage(images: FetchedImage[]): HumanMessage {
   return new HumanMessage({
     content: [
-      ...images.map((img) => ({
-        type: "image" as const,
-        data: img.base64,
-        mimeType: img.mediaType,
-      })),
+      ...images.flatMap((img) => [
+        { type: "text" as const, text: `Image URL: ${img.url}` },
+        { type: "image" as const, data: img.base64, mimeType: img.mediaType },
+      ]),
       {
         type: "text" as const,
-        text: `Analyze these ${images.length} image(s) of a place. Filter each image and extract identification cues and a visual summary.`,
+        text: `Analyze these ${images.length} image(s) of a place. Each image has an associated URL label — use that exact URL as the url field in your response. Do not fetch or access the URL, it is for identification purposes in your response only. Filter each image and extract identification cues and a visual summary.`,
       },
     ],
   });
@@ -46,8 +45,8 @@ function buildImageMessage(images: FetchedImage[]): HumanMessage {
 type ImageResult = z.infer<typeof ImageAnalysisOutput>["images"][number];
 
 export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) => {
-  const lgLog = createNodeLogger("LangGraph::Node", "image-analysis", config);
-  const appLog = createNodeLogger("App::Node", "image-analysis", config);
+  const lgLog = createNodeLogger("LangGraph::Node", "image-analysis");
+  const appLog = createNodeLogger("App::Node", "image-analysis");
   const imageUrls: string[] = (config.configurable?.imageUrls as string[]) ?? [];
 
   lgLog.info({ event: "node_start" });
@@ -75,7 +74,7 @@ export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) 
 
   if (fetchedImages.length === 0) {
     const stateUpdate = { visualSummary: "", identificationCues: "", filteredImageUrls: [] as string[], errors: fetchErrors };
-    lgLog.info({ event: "state_update", ...truncateStrings(stateUpdate) });
+    lgLog.info({ event: "state_update", ...stateUpdate });
     lgLog.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
     return stateUpdate;
   }
@@ -98,7 +97,7 @@ export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) 
     errors: fetchErrors,
   };
 
-  lgLog.info({ event: "state_update", ...truncateStrings(stateUpdate) });
+  lgLog.info({ event: "state_update", ...stateUpdate });
   lgLog.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
 
   return stateUpdate;

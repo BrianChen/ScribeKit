@@ -1,5 +1,4 @@
 import pino from "pino";
-import type { NodeConfig } from "./state";
 
 export const LAYERS = [
   "App::Pipeline",
@@ -22,47 +21,28 @@ export const logger = pino({
         target: "pino-pretty",
         options: {
           messageFormat: "{layer} │ {agent} │ {event}",
-          ignore: "pid,hostname,service,layer,agent,event,threadId,placeName,destinationName,country",
+          ignore: "pid,hostname,service,layer,agent,event",
           colorize: true,
         },
       },
       {
         target: "pino/file",
-        options: { destination: "./logs/scribekit.log", mkdir: true },
+        options: { destination: "./workspace/scribekit.log", mkdir: true },
       },
     ],
   },
 });
 
-export function createPipelineLogger(parsed: {
-  placeName: string;
-  destinationName: string;
-  country: string;
-}): pino.Logger {
-  return logger.child({
-    layer: "App::Pipeline" as Layer,
-    agent: "",
-    threadId: `${parsed.placeName}--${parsed.destinationName}`,
-    placeName: parsed.placeName,
-    destinationName: parsed.destinationName,
-    country: parsed.country,
-  });
+export function createPipelineLogger(): pino.Logger {
+  return logger.child({ layer: "App::Pipeline" as Layer, agent: "" });
 }
 
-export function createNodeLogger(
-  layer: Layer,
-  agent: string | null,
-  config: NodeConfig,
-): pino.Logger {
-  const c = config.configurable ?? {};
-  return logger.child({
-    layer,
-    agent: agent ?? "",
-    threadId: (c.thread_id as string) ?? "",
-    placeName: (c.placeName as string) ?? "",
-    destinationName: (c.destinationName as string) ?? "",
-    country: (c.country as string) ?? "",
-  });
+export function createCallbackLogger(): pino.Logger {
+  return logger.child({ layer: "LangGraph::LLM" as Layer, agent: "" });
+}
+
+export function createNodeLogger(layer: Layer, agent: string | null): pino.Logger {
+  return logger.child({ layer, agent: agent ?? "" });
 }
 
 const MAX_STRING_LENGTH = 200;

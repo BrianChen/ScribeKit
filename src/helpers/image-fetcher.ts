@@ -1,15 +1,9 @@
+import sharp from "sharp";
 import { validateUrl } from "./url-validator";
+import { CLOUDINARY_URL_RE, fetchCloudinaryImage } from "./cloudinary-fetcher";
+import { MAX_IMAGE_BYTES, MAX_IMAGE_WIDTH, ALLOWED_MEDIA_TYPES } from "./image-constraints";
 
 const FETCH_TIMEOUT_MS = 15_000; // higher than fetch_url's 10s — images are larger
-const MAX_IMAGE_BYTES = 5_000_000; // Claude vision accepts up to 20MB; 5MB is a conservative cap
-
-// Claude vision's four supported image types
-const ALLOWED_MEDIA_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-]);
 
 export interface FetchedImage {
   url: string;
@@ -67,14 +61,18 @@ export async function fetchImage(url: string): Promise<FetchedImage> {
     chunks.push(value);
   }
 
-  const buffer = Buffer.concat(chunks);
-  const base64 = buffer.toString("base64");
+  const raw = Buffer.concat(chunks);
+  const resized = await sharp(raw)
+    .resize({ width: MAX_IMAGE_WIDTH, withoutEnlargement: true })
+    .toBuffer();
 
-  return { url, base64, mediaType: contentType };
+  return { url, base64: resized.toString("base64"), mediaType: contentType };
 }
 
 export async function fetchImages(urls: string[]): Promise<ImageFetchResult[]> {
-  const results = await Promise.allSettled(urls.map(fetchImage));
+  const results = await Promise.allSettled(
+    urls.map((url) => (CLOUDINARY_URL_RE.test(url) ? fetchCloudinaryImage(url) : fetchImage(url))),
+  );
 
   return results.map((result, i) => {
     if (result.status === "fulfilled") {

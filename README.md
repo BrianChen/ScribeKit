@@ -30,12 +30,23 @@ Create a `.env` file with your API keys:
 ```env
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_PLACES_API_KEY=...
+
+# Optional — required only if passing private Cloudinary image URLs
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
 ```
 
-Run the pipeline:
+Run the full pipeline (clears logs, runs, prettifies):
 
 ```bash
-npm run dev -- generate --input examples/cli-input.json --output result.json
+npm run run:pipeline
+```
+
+Or run manually:
+
+```bash
+npm run dev -- generate --input workspace/cli-input.json --output workspace/result.json
 ```
 
 ## How It Works
@@ -65,11 +76,7 @@ The pipeline has two conditional gates:
 ### CLI
 
 ```bash
-# Basic — place name, city, country
-npm run dev -- generate --input examples/cli-input.json --output result.json
-
-# With images and notes
-npm run dev -- generate --input examples/influencer-submission.json --output result.json
+npm run dev -- generate --input workspace/cli-input.json --output workspace/result.json
 ```
 
 ### Library
@@ -95,8 +102,14 @@ const result = await generate({
 | `destinationName` | `string` | Yes | City or destination |
 | `country` | `string` | Yes | Country |
 | `address` | `string \| null` | No | Address hint (overridden by Google Places) |
-| `imageUrls` | `string[]` | No | Up to 5 image URLs |
+| `imageUrls` | `string[]` | No | Up to 5 image URLs. Public HTTPS or private Cloudinary URLs supported. |
 | `notes` | `string` | No | Freeform user notes |
+
+Image constraints exported from the library:
+
+```ts
+import { MAX_IMAGE_COUNT, MAX_IMAGE_BYTES, ALLOWED_MEDIA_TYPES } from "scribekit";
+```
 
 ## Output
 
@@ -131,11 +144,21 @@ URL fetching (both the research tool and image fetcher) includes layered SSRF pr
 - Cloud metadata IP blocking (169.254.169.254, etc.)
 - Response size caps and HTML stripping
 
+## Logging
+
+Structured logging via Pino with dual transports: colorized output to terminal and JSON to `workspace/scribekit.log`. Place context is logged once at `pipeline_start` — individual events (LLM calls, tool calls, node transitions) only carry their own fields.
+
+```bash
+npm run run:pipeline   # clear logs → run pipeline → prettify log to workspace/scribekit-pretty.log
+```
+
+Log level controlled by `LOG_LEVEL` env var (default: `info`).
+
 ## Development
 
 ```bash
 npm run build          # Build with tsup (ESM)
-npm test               # Run tests (91 tests)
+npm test               # Run tests
 npm run lint           # ESLint
 ```
 
@@ -148,17 +171,22 @@ src/
   context.ts                  # Input schema (Zod) + confidence levels
   state.ts                    # LangGraph Annotation state + PlaceDetails
   graph.ts                    # StateGraph — nodes + conditional edges
+  logger.ts                   # Pino instance, createNodeLogger(), createPipelineLogger(), createCallbackLogger()
   agents/
     image-analysis-agent.ts   # Image filtering + visual extraction
     identification-agent.ts   # Google Places verification
     research-agent.ts         # Web research
     editorial-agent.ts        # Editorial generation
+  logging/
+    callback-handler.ts       # PinoCallbackHandler — LLM and tool lifecycle events
   prompts/                    # System prompts for each agent
   tools/
     fetch-url.ts              # Secure URL fetcher + HTML stripping
     google-places.ts          # Google Places API text search
   helpers/
-    image-fetcher.ts          # Image fetch + base64 conversion
+    image-fetcher.ts          # Image fetch + base64 conversion (public + Cloudinary)
+    image-constraints.ts      # Shared image limits (MAX_IMAGE_COUNT, MAX_IMAGE_BYTES, etc.)
+    cloudinary-fetcher.ts     # Authenticated Cloudinary image fetching
     url-validator.ts          # SSRF-safe URL validation
 ```
 

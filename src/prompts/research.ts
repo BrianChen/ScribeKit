@@ -7,13 +7,13 @@ The place has already been confirmed to exist. You have access to its verified n
 Gather information on these topics (The editorial writer needs this information to write a detailed, helpful, positive but honest blog):
 
 1. **Practical details:** (these are more factual rather than vibes)
-   - Is booking/reservation required or recommended? How far in advance?
-   - Any dress code requirements?
-   - Typical visit duration needed
-   - What to bring (if relevant — mainly for outdoor/activity places)
-   - Indoor, outdoor, or both?
-   - Weather dependent - would weather hugely impact the experience?
-   - Neighbourhood/district/area - what specific neighborhood/district/area is this place in, what is the name of it?
+   • Is booking/reservation required or recommended? How far in advance?
+   • Any dress code requirements?
+   • Typical visit duration needed
+   • What to bring (if relevant — mainly for outdoor/activity places)
+   • Indoor, outdoor, or both?
+   • Weather dependent - would weather hugely impact the experience?
+   • Neighbourhood/district/area - what specific neighborhood/district/area is this place in, what is the name of it?
 2. **History and significance** — when was it built/founded, what's its reputation
 3. **The visitor experience** — What is the experience like for visitors? What do they see? What do they do? What is the atmosphere like?
 4. **Seasonal considerations** — best/worst times to visit, crowds, events, closures, weather impact (maybe this doesn't apply to the place)
@@ -23,15 +23,15 @@ Gather information on these topics (The editorial writer needs this information 
 
 ## How to research
 
-- Start with what you already know about the place
-- For details you're unsure about use fetch_url tool to visit relevant pages
-   - Don't over fetch, gather all information you're unsure about and make optimized fetches.
-   - What are you unsure about?
-      - Factual information? Try official sites, travel blogs like TripAdvisor, Klook
-      - Vibes/experiences/sentiment information? Try travel sites with reviews like TripAdvisor reviews, Lonely Planet reviews, editorial sites
-- Fetch tool rules:
-   - only fetch secure sources (https://)
-- If you can't find reliable information on a topic thats fine, don't guess or make things up
+• Start with what you already know about the place
+• For details you're unsure about use fetch_url tool to visit relevant pages
+   • Don't over fetch, gather all information you're unsure about and make optimized fetches.
+   • What are you unsure about?
+      • Factual information? Try official sites, travel blogs like TripAdvisor, Klook
+      • Vibes/experiences/sentiment information? Try travel sites with reviews like TripAdvisor reviews, Lonely Planet reviews, editorial sites
+• Fetch tool rules:
+   • only fetch secure sources (https://)
+• If you can't find reliable information on a topic thats fine, don't guess or make things up
 
 ## Output
 

@@ -2,7 +2,7 @@ import { createAgent, providerStrategy } from "langchain";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { z } from "zod";
 
-import { createNodeLogger, truncateStrings } from '../logger';
+import { createNodeLogger } from '../logger';
 import { EDITORIAL_PROMPT } from '../prompts/editorial'
 import { type GraphState, type NodeConfig } from '../state'
 
@@ -35,7 +35,7 @@ export const EditorialOutput = z.object({
     label: z.string(),
     reason: z.string(),
     avoid: z.boolean(),
-  })).nullable(),
+  }).strict()).nullable(),
 
   taglineConfidence: z.enum(["HIGH", "MEDIUM", "LOW"]),
   descriptionConfidence: z.enum(["HIGH", "MEDIUM", "LOW"]),
@@ -50,7 +50,7 @@ export const EditorialOutput = z.object({
   indoorOutdoorConfidence: z.enum(["HIGH", "MEDIUM", "LOW"]),
   weatherDependentConfidence: z.enum(["HIGH", "MEDIUM", "LOW"]),
   moodsConfidence: z.enum(["HIGH", "MEDIUM", "LOW"]),
-});
+}).strict();
 
 const editorialAgent = createAgent({
   model: new ChatAnthropic({
@@ -63,7 +63,7 @@ const editorialAgent = createAgent({
 });
 
 export const editorialNode = async (state: GraphState, config: NodeConfig) => {
-  const log = createNodeLogger("LangGraph::Node", "editorial", config);
+  const log = createNodeLogger("LangGraph::Node", "editorial");
   log.info({ event: "node_start" });
   const startTime = Date.now();
 
@@ -90,7 +90,7 @@ export const editorialNode = async (state: GraphState, config: NodeConfig) => {
   const stateUpdate = {
     editorialContent: result.structuredResponse,
   };
-  log.info({ event: "state_update", ...truncateStrings(stateUpdate as Record<string, unknown>) });
+  log.info({ event: "state_update", ...stateUpdate });
   log.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
 
   return stateUpdate;

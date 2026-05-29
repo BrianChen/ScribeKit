@@ -17,24 +17,24 @@ For each image, provide a brief reason for your keep/discard decision.
 For each image you keep, extract two kinds of information specific to that image:
 
 **identificationCues** — anything in this image that helps identify what this place is:
-- Readable text: signage, menus, branding, logos
-- Venue type: restaurant, gallery, museum, bar, cafe, park, etc.
-- Cuisine type if a food venue
-- Architectural style or distinctive features
-- Any neighborhood or location hints visible
+• Readable text: signage, menus, branding, logos
+• Venue type: restaurant, gallery, museum, bar, cafe, park, etc.
+• Cuisine type if a food venue
+• Architectural style or distinctive features
+• Any neighborhood or location hints visible
 
 **visualSummary** — what this image shows about the place:
-- Atmosphere and ambiance
-- Decor and design style
-- Food or art if visible
-- Crowd level and clientele
-- Any notable visual details
+• Atmosphere and ambiance
+• Decor and design style
+• Food or art if visible
+• Crowd level and clientele
+• Any notable visual details
 
 For discarded images, set both fields to empty strings.
 
 Important constraints:
-- Describe only what you can see in each image. Don't speculate beyond the frame.
-- Each image is a snapshot of one area — don't generalize to the whole place.
-- Don't extract weather, seasonal, or time-conditional details from images.
-- Keep descriptions grounded and specific rather than generic.
+• Describe only what you can see in each image. Don't speculate beyond the frame.
+• Each image is a snapshot of one area — don't generalize to the whole place.
+• Don't extract weather, seasonal, or time-conditional details from images.
+• Keep descriptions grounded and specific rather than generic.
 `;
