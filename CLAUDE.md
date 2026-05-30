@@ -67,6 +67,13 @@ Structured logging via Pino with dual transports: `pino-pretty` to terminal (col
 
 `createNodeLogger(layer, agent)` creates a child logger with only `layer` and `agent` bound. `createPipelineLogger()` and `createCallbackLogger()` do the same for their respective layers. Place context (`placeName`, `destinationName`, `country`, `imageUrls`, `notes`) is logged once as fields on `pipeline_start` — not bound to child loggers.
 
+### Error handling
+
+- `generate()` returns `GenerateResult` with `ok: false` when confidence is LOW/NONE (place not confirmed) — mirrors `response.ok` from the fetch API
+- `generate()` throws `ScribeKitError` (`src/errors.ts`) for infrastructure failures (rate limit, auth, network, agent crash). `cause` holds the original provider error with all fields intact
+- `BaseLangGraphError` subclasses (graph misconfiguration, recursion limit) are wrapped with a generic internal error message — these indicate ScribeKit bugs
+- All other thrown errors (Anthropic SDK, LangChain core) surface the original `e.message` via `ScribeKitError`
+
 ### Key details
 
 - Thread ID for checkpointer is `{placeName}--{destinationName}`

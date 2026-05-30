@@ -37,7 +37,9 @@ export async function searchPlaces(query: string): Promise<PlaceCandidate[]> {
   });
 
   if (!response.ok) {
-    throw new Error(`Google Places API error: HTTP ${response.status}`);
+    const err = new Error(`Google Places API error: HTTP ${response.status}`);
+    (err as any).status = response.status;
+    throw err;
   }
 
   interface GooglePlace {
@@ -71,6 +73,9 @@ export async function searchPlaces(query: string): Promise<PlaceCandidate[]> {
 
 const googlePlaces = tool(
   async ({ query }) => {
+    if (!process.env.GOOGLE_PLACES_API_KEY) {
+      throw new Error("GOOGLE_PLACES_API_KEY is not set");
+    }
     try {
       const candidates = await searchPlaces(query);
       if (candidates.length === 0) {
@@ -78,6 +83,10 @@ const googlePlaces = tool(
       }
       return JSON.stringify({ candidates: candidates.slice(0, 5) });
     } catch (e) {
+      const status = (e as any).status;
+      if (status === 401 || status === 403) {
+        throw e;
+      }
       return `Error: ${e instanceof Error ? e.message : "Google Places search failed"}`;
     }
   },

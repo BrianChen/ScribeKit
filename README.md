@@ -60,7 +60,7 @@ START → (has images?) → Image Analysis → Identification → (confidence �
 The pipeline has two conditional gates:
 
 1. **Image gate** — if the submission includes image URLs, the image analysis agent runs first to filter photos and extract visual cues. Otherwise, it skips straight to identification.
-2. **Confidence gate** — the identification agent verifies the place via Google Places and assigns a confidence level. Only VERY_HIGH, HIGH, or MEDIUM proceed to research and editorial. LOW or NONE terminates early with an error.
+2. **Confidence gate** — the identification agent verifies the place via Google Places and assigns a confidence level. Only VERY_HIGH, HIGH, or MEDIUM proceed to research and editorial. LOW or NONE terminates early with `ok: false`.
 
 ### Agents
 
@@ -82,16 +82,27 @@ npm run dev -- generate --input workspace/cli-input.json --output workspace/resu
 ### Library
 
 ```ts
-import { generate } from "scribekit";
+import { generate, ScribeKitError } from "scribekit";
 
-const result = await generate({
-  placeName: "Ichiran Ramen",
-  destinationName: "Tokyo",
-  country: "Japan",
-  address: "1-22-7 Jinnan, Shibuya",               // optional hint
-  imageUrls: ["https://example.com/ramen.jpg"],     // optional, up to 5
-  notes: "Best tonkotsu ramen I've ever had.",      // optional freeform
-});
+try {
+  const result = await generate({
+    placeName: "Ichiran Ramen",
+    destinationName: "Tokyo",
+    country: "Japan",
+    address: "1-22-7 Jinnan, Shibuya",               // optional hint
+    imageUrls: ["https://example.com/ramen.jpg"],     // optional, up to 5
+    notes: "Best tonkotsu ramen I've ever had.",      // optional freeform
+  });
+
+  if (!result.ok) {
+    // Place not confirmed — result.confidence is "LOW" or "NONE"
+  }
+} catch (e) {
+  if (e instanceof ScribeKitError) {
+    // Infrastructure failure: rate limit, auth, network error
+    // e.cause holds the original provider error
+  }
+}
 ```
 
 ### Input
@@ -117,6 +128,8 @@ The pipeline returns a `GenerateResult` with verified place details, research no
 
 ```ts
 {
+  ok,                  // false when place not confirmed (confidence LOW/NONE)
+
   // Verified by Google Places
   placeName, destinationName, country, address,
   latitude, longitude, phone, website,
@@ -128,10 +141,12 @@ The pipeline returns a `GenerateResult` with verified place details, research no
   researchSources,     // URLs visited during research
   editorialContent,    // structured editorial (tagline, description, moods, tips, etc.)
   filteredImageUrls,   // images that passed the relevance filter
-  errors,              // accumulated errors from any stage
+  errors,              // non-fatal errors accumulated across pipeline stages
   generatedAt,         // ISO timestamp
 }
 ```
+
+`ok` mirrors `response.ok` from the fetch API — always check it before using `editorialContent` or location data. When `ok: false`, the place was not confirmed and those fields will be empty or zero. `generate()` only throws `ScribeKitError` for infrastructure failures (rate limit, auth error, network failure); a place not found is a normal result.
 
 The `editorialContent` object includes: tagline, description, whyVisit, neighbourhood, localTips, whatToBring, visitDuration, bookingRequired, dressCode, indoorOutdoor, weatherDependent, seasonalTips, moods, categories, and per-field confidence levels.
 
@@ -171,6 +186,7 @@ src/
   context.ts                  # Input schema (Zod) + confidence levels
   state.ts                    # LangGraph Annotation state + PlaceDetails
   graph.ts                    # StateGraph — nodes + conditional edges
+  errors.ts                   # ScribeKitError — public error class
   logger.ts                   # Pino instance, createNodeLogger(), createPipelineLogger(), createCallbackLogger()
   agents/
     image-analysis-agent.ts   # Image filtering + visual extraction

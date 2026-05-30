@@ -7,6 +7,8 @@ const MAX_RESPONSE_SIZE = 50_000;
 const MAX_RAW_BYTES = 1_000_000;
 const FETCH_TIMEOUT_MS = 10_000;
 
+export type FetchErrorHandler = (url: string, reason: string) => void;
+
 async function readCapped(response: Response): Promise<string> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
@@ -25,50 +27,56 @@ async function readCapped(response: Response): Promise<string> {
   return chunks.join("");
 }
 
-const fetchUrl = tool(
-  async ({ url }) => {
-    const validation = await validateUrl(url);
-    if (!validation.safe) {
-      return `Error: ${validation.reason}`;
-    }
-
-    try {
-      const response = await fetch(url, {
-        method: "GET",
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        redirect: "error",
-        credentials: "omit",
-        referrerPolicy: "no-referrer",
-        headers: {
-          "User-Agent": "ScribeKit/1.0",
-        },
-      });
-
-      if (!response.ok) {
-        return `Error: HTTP ${response.status}`;
+export function createFetchUrl(onError?: FetchErrorHandler) {
+  return tool(
+    async ({ url }) => {
+      const validation = await validateUrl(url);
+      if (!validation.safe) {
+        return `Error: ${validation.reason}`;
       }
 
-      const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
-      if (!contentType.includes("text/")) {
-        return "Error: Response is not a text content type";
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          redirect: "error",
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          headers: {
+            "User-Agent": "ScribeKit/1.0",
+          },
+        });
+
+        if (!response.ok) {
+          const reason = `HTTP ${response.status}`;
+          onError?.(url, reason);
+          return `Error: ${reason}`;
+        }
+
+        const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+        if (!contentType.includes("text/")) {
+          return "Error: Response is not a text content type";
+        }
+
+        const html = await readCapped(response);
+        const $ = load(html);
+        $("script, style, nav, footer, header, noscript, aside, form, iframe, svg").remove();
+        $("*").contents().filter(function () { return this.type === "comment"; }).remove();
+        const text = $("body").text().replace(/\s+/g, " ").trim();
+
+        return text.slice(0, MAX_RESPONSE_SIZE);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : "Fetch failed";
+        onError?.(url, reason);
+        return `Error: ${reason}`;
       }
-
-      const html = await readCapped(response);
-      const $ = load(html);
-      $("script, style, nav, footer, header, noscript, aside, form, iframe, svg").remove();
-      $("*").contents().filter(function () { return this.type === "comment"; }).remove();
-      const text = $("body").text().replace(/\s+/g, " ").trim();
-
-      return text.slice(0, MAX_RESPONSE_SIZE);
-    } catch (e) {
-      return `Error: ${e instanceof Error ? e.message : "Fetch failed"}`;
+    },
+    {
+      name: "fetch_url",
+      description: "Fetch a URL and return its text content",
+      schema: z.object({ url: z.string().url() }),
     }
-  },
-  {
-    name: "fetch_url",
-    description: "Fetch a URL and return its text content",
-    schema: z.object({ url: z.string().url() }),
-  }
-);
+  );
+}
 
-export default fetchUrl;
+export default createFetchUrl();

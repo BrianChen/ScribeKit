@@ -1,9 +1,13 @@
 import { graph } from "./graph";
-import { Context, type ConfidenceLevel } from "./context";
+import { Context, type ConfidenceLevel, PASSING_CONFIDENCE } from "./context";
 import { createPipelineLogger, createCallbackLogger } from "./logger";
 import { PinoCallbackHandler } from "./logging/callback-handler";
+import { BaseLangGraphError } from "@langchain/langgraph";
+import { ScribeKitError } from "./errors";
+import { type GraphState } from "./state";
 export { EditorialOutput } from "./agents/editorial-agent";
 export { MAX_IMAGE_COUNT, MAX_IMAGE_BYTES, ALLOWED_MEDIA_TYPES } from "./helpers/image-constraints";
+export { ScribeKitError } from "./errors";
 
 export interface GenerateInput {
   placeName: string;
@@ -15,6 +19,7 @@ export interface GenerateInput {
 }
 
 export interface GenerateResult {
+  ok: boolean;
   placeName: string;
   destinationName: string;
   country: string;
@@ -36,7 +41,13 @@ export interface GenerateResult {
 }
 
 export async function generate(input: GenerateInput): Promise<GenerateResult> {
-  const parsed = Context.parse(input);
+  let parsed: Context;
+  try {
+    parsed = Context.parse(input);
+  } catch (e) {
+    throw new ScribeKitError(e instanceof Error ? e.message : "Invalid input", { cause: e });
+  }
+
   const pipelineLog = createPipelineLogger();
   const callbackHandler = new PinoCallbackHandler(createCallbackLogger());
 
@@ -52,16 +63,28 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
 
   const startTime = Date.now();
 
-  const result = await graph.invoke(
-    {},
-    {
-      callbacks: [callbackHandler],
-      configurable: { thread_id: `${parsed.placeName}--${parsed.destinationName}`, ...parsed },
-    },
-  );
+  let result!: GraphState;
+  try {
+    result = await graph.invoke(
+      {},
+      {
+        callbacks: [callbackHandler],
+        configurable: { thread_id: `${parsed.placeName}--${parsed.destinationName}`, ...parsed },
+      },
+    );
+  } catch (e) {
+    if (e instanceof BaseLangGraphError) {
+      throw new ScribeKitError("ScribeKit encountered an internal error.", { cause: e });
+    }
+    throw new ScribeKitError(
+      e instanceof Error ? e.message : "Pipeline failed",
+      { cause: e },
+    );
+  }
 
   const placeDetails = result.placeDetails;
   const output: GenerateResult = {
+    ok: PASSING_CONFIDENCE.has(result.confidence as ConfidenceLevel),
     placeName: placeDetails?.placeName ?? parsed.placeName,
     destinationName: placeDetails?.destinationName ?? parsed.destinationName,
     country: placeDetails?.country ?? parsed.country,

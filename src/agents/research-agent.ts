@@ -1,7 +1,7 @@
 import { createAgent, providerStrategy, toolCallLimitMiddleware } from "langchain";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { z } from 'zod';
-import fetchUrl from '../tools/fetch-url';
+import { createFetchUrl } from '../tools/fetch-url';
 
 import { createNodeLogger } from '../logger';
 import { RESEARCH_PROMPT } from '../prompts/research';
@@ -12,23 +12,30 @@ const ResearchOutput = z.object({
   researchSources: z.array(z.string()).describe("URLs visited"),
 }).strict();
 
-const researchAgent = createAgent({
-  model: new ChatAnthropic({
-    model: "claude-haiku-4-5-20251001",
-    maxTokens: 2048,
-    maxRetries: 2,
-  }),
-  tools: [fetchUrl],
-  systemPrompt: RESEARCH_PROMPT,
-  responseFormat: providerStrategy(ResearchOutput),
-  middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
-});
-
 export const researchNode = async (state: GraphState, config: NodeConfig) => {
   const log = createNodeLogger("LangGraph::Node", "research");
   log.info({ event: "node_start" });
   const startTime = Date.now();
 
+  const fetchErrors: string[] = [];
+  const fetchUrl = createFetchUrl((url, reason) => {
+    fetchErrors.push(`Failed to fetch "${url}": ${reason}`);
+  });
+
+  const researchAgent = createAgent({
+    model: new ChatAnthropic({
+      model: "claude-haiku-4-5-20251001",
+      maxTokens: 2048,
+      maxRetries: 2,
+    }),
+    tools: [fetchUrl],
+    systemPrompt: RESEARCH_PROMPT,
+    responseFormat: providerStrategy(ResearchOutput),
+    middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
+  });
+
+  // Use same or updated place/destination/country/address from state over user input
+  // stored in context/config
   const placeDetails = state.placeDetails;
   const configurable = config.configurable ?? {};
   const placeName = placeDetails?.placeName ?? configurable.placeName;
@@ -51,6 +58,7 @@ export const researchNode = async (state: GraphState, config: NodeConfig) => {
   const stateUpdate = {
     researchNotes: result.structuredResponse.researchNotes,
     researchSources: result.structuredResponse.researchSources,
+    ...(fetchErrors.length > 0 && { errors: fetchErrors }),
   };
   log.info({ event: "state_update", ...stateUpdate });
   log.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });

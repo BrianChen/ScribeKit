@@ -21,11 +21,11 @@ describe("fetchImage", () => {
 
 describe("fetchImages", () => {
   it("collects errors without throwing", async () => {
-    const result = await fetchImages([
+    const results = await fetchImages([
       "http://example.com/a.jpg",
       "http://example.com/b.jpg",
     ]);
-    assert.equal(result.images.length, 0);
-    assert.equal(result.errors.length, 2);
+    assert.equal(results.filter((r) => r.status === "success").length, 0);
+    assert.equal(results.filter((r) => r.status === "error").length, 2);
   });
 });
