@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev -- generate --input workspace/cli-input.json --output workspace/result.json  # run CLI in dev mode
+npm run run:pipeline        # run the full pipeline (clears logs, generates, pretty-prints log)
 npm run build          # build with tsup (ESM, outputs to dist/)
 npm test               # run tests (node --test with --experimental-strip-types)
 npm run lint           # eslint src/
@@ -39,14 +39,14 @@ Two conditional edges:
 ### Context vs State
 
 - **Context** (`context.ts`) — immutable input (placeName, destinationName, country, address hint, imageUrls, notes) passed via LangGraph's `configurable`. Defined as a plain Zod object (not `StateSchema`) because `createAgent`'s `contextSchema` requires `AnyAnnotationRoot | InteropZodObject`.
-- **State** (`graph.ts`) — mutable working memory that agents write to through their node wrapper functions. Includes image analysis outputs (visualSummary, identificationCues, filteredImageUrls), identification outputs (confidence, placeDetails), research outputs (researchNotes, researchSources), editorial outputs (editorialContent), and errors.
+- **State** (`graph.ts`) — mutable working memory that agents write to through their node wrapper functions. Includes image analysis outputs (visualSummary, filteredImageUrls), identification outputs (confidence, placeDetails), research outputs (researchNotes, researchSources), editorial outputs (editorialContent), and errors.
 
 ### Agent pattern
 
 Agents are created with `createAgent()` from `langchain` and wrapped in node functions that adapt between LangGraph's state interface and the agent's message-based interface. Tools talk to the LLM via message history — state only changes when the node function returns values.
 
-- **Image analysis agent** — uses `claude-haiku-4-5-20251001` (vision), no tools. Receives up to 5 images as base64, filters for place-relevant images, extracts identification cues (signage, venue type, cuisine) and visual summaries (atmosphere, decor, vibe). Images fetched/validated via `helpers/image-fetcher.ts` using the existing SSRF protection layer.
-- **Identification agent** — uses `claude-haiku-4-5-20251001` with `google_places` tool (capped at 1 tool call). Takes submitted input + identification cues, confirms the place exists via Google Places, returns verified place details (name, address, coords, phone, website, priceLevel, openingHours, accessibilityOptions) with a confidence level.
+- **Image analysis agent** — uses `claude-haiku-4-5-20251001` (vision), no tools. Receives up to 5 images as base64, filters for place-relevant images, writes a single `visualSummary` synthesizing what kept images reveal (atmosphere, decor, vibe). Images fetched/validated via `helpers/image-fetcher.ts` using the existing SSRF protection layer.
+- **Identification agent** — uses `claude-haiku-4-5-20251001` with `google_places` tool (up to 3 sequential calls). Takes submitted input (name, destination, country, optional address hint), confirms the place exists via Google Places. Evaluates confidence after each call and retries with a different query strategy if MEDIUM, LOW, or NONE; stops early at HIGH or VERY_HIGH. Returns verified place details (name, address, coords, phone, website, priceLevel, openingHours, accessibilityOptions) with a confidence level. All fields prefer Google's data with provided input as fallback; destinationName and country are derived from Google's formatted address.
 - **Research agent** — uses `claude-haiku-4-5-20251001` with `fetch_url` tool (capped at 3 tool calls). Uses verified `placeDetails` from state. Outputs `researchNotes` and `researchSources`.
 - **Editorial agent** — uses `claude-sonnet-4-6`, no tools, pure generation. Receives research notes + visual summary + user notes. Outputs structured `EditorialOutput` (tagline, description, moods, categories, confidence levels, etc.).
 

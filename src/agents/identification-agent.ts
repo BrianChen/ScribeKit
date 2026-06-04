@@ -40,7 +40,7 @@ const identificationAgent = createAgent({
   tools: [googlePlaces],
   systemPrompt: IDENTIFICATION_PROMPT,
   responseFormat: providerStrategy(IdentificationOutput),
-  middleware: [toolCallLimitMiddleware({ runLimit: 1 })],
+  middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
 });
 
 export const identificationNode = async (state: GraphState, config: NodeConfig) => {
@@ -49,14 +49,10 @@ export const identificationNode = async (state: GraphState, config: NodeConfig) 
   const startTime = Date.now();
 
   const { placeName, destinationName, country, address } = config.configurable ?? {};
-  const identificationCues = state.identificationCues || "";
 
   let userMessage = `Identify and confirm this place: "${placeName}" in ${destinationName}, ${country}`;
   if (address) {
     userMessage += `\nAddress hint: ${address}`;
-  }
-  if (identificationCues) {
-    userMessage += `\nIdentification cues from photos: ${identificationCues}`;
   }
 
   const result = await identificationAgent.invoke({

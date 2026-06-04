@@ -23,6 +23,7 @@ that aren't supported by the research.
 • Tone down on superlatives ("best", "most amazing", "must-see") unless you feel strongly about it
 • No rhetorical questions ("Looking for adventure?", "Want to escape the crowds?")
 • No URLs or website names in any fields
+• Avoid overusing em dashes (—), use them sparingly or avoid altogether, only when a comma or period won't do
 
 ## Field guidance
 

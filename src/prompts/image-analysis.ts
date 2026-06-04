@@ -12,29 +12,19 @@ Discard images that provide no value about the place — selfies where the place
 
 For each image, provide a brief reason for your keep/discard decision.
 
-## 2. Extract information per image
+## 2. Write a combined visual summary
 
-For each image you keep, extract two kinds of information specific to that image:
-
-**identificationCues** — anything in this image that helps identify what this place is:
-• Readable text: signage, menus, branding, logos
-• Venue type: restaurant, gallery, museum, bar, cafe, park, etc.
-• Cuisine type if a food venue
-• Architectural style or distinctive features
-• Any neighborhood or location hints visible
-
-**visualSummary** — what this image shows about the place:
+After filtering, write a single \`visualSummary\` that synthesizes what the kept images reveal about the place as a whole:
 • Atmosphere and ambiance
 • Decor and design style
 • Food or art if visible
 • Crowd level and clientele
 • Any notable visual details
 
-For discarded images, set both fields to empty strings.
+If no images are kept, set \`visualSummary\` to an empty string.
 
 Important constraints:
-• Describe only what you can see in each image. Don't speculate beyond the frame.
-• Each image is a snapshot of one area — don't generalize to the whole place.
-• Don't extract weather, seasonal, or time-conditional details from images.
+• Base the summary only on what you can see across the kept images. Don't speculate beyond what's visible.
 • Keep descriptions grounded and specific rather than generic.
+• Don't extract weather, seasonal, or time-conditional details from images.
 `;

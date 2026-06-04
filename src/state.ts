@@ -16,7 +16,6 @@ export interface PlaceDetails {
 
 export const State = Annotation.Root({
   visualSummary: Annotation<string>({ reducer: (_, b) => b, default: () => "" }),
-  identificationCues: Annotation<string>({ reducer: (_, b) => b, default: () => "" }),
   filteredImageUrls: Annotation<string[]>({ reducer: (_, b) => b, default: () => [] }),
 
   confidence: Annotation<string>({ reducer: (_, b) => b, default: () => "NONE" }),

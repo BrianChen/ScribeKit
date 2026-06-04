@@ -12,9 +12,8 @@ export const ImageAnalysisOutput = z.object({
     url: z.string(),
     keep: z.boolean(),
     reason: z.string(),
-    identificationCues: z.string(),
-    visualSummary: z.string(),
   }).strict()),
+  visualSummary: z.string(),
 }).strict();
 
 const imageAnalysisAgent = createAgent({
@@ -36,13 +35,11 @@ function buildImageMessage(images: FetchedImage[]): HumanMessage {
       ]),
       {
         type: "text" as const,
-        text: `Analyze these ${images.length} image(s) of a place. Each image has an associated URL label — use that exact URL as the url field in your response. Do not fetch or access the URL, it is for identification purposes in your response only. Filter each image and extract identification cues and a visual summary.`,
+        text: `Analyze these ${images.length} image(s) of a place. Each image has an associated URL label — use that exact URL as the url field in your response. Do not fetch or access the URL, it is for identification purposes in your response only. Filter each image, then write a combined visual summary of all kept images.`,
       },
     ],
   });
 }
-
-type ImageResult = z.infer<typeof ImageAnalysisOutput>["images"][number];
 
 export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) => {
   const lgLog = createNodeLogger("LangGraph::Node", "image-analysis");
@@ -52,7 +49,7 @@ export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) 
   lgLog.info({ event: "node_start" });
 
   if (imageUrls.length === 0) {
-    const stateUpdate = { visualSummary: "", identificationCues: "", filteredImageUrls: [] };
+    const stateUpdate = { visualSummary: "", filteredImageUrls: [] };
     lgLog.info({ event: "state_update", ...stateUpdate });
     lgLog.info({ event: "node_end" });
     return stateUpdate;
@@ -73,7 +70,7 @@ export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) 
   const fetchErrors = fetchResults.filter((r) => r.status === "error").map((r) => `${r.url}: ${r.reason}`);
 
   if (fetchedImages.length === 0) {
-    const stateUpdate = { visualSummary: "", identificationCues: "", filteredImageUrls: [] as string[], errors: fetchErrors };
+    const stateUpdate = { visualSummary: "", filteredImageUrls: [] as string[], errors: fetchErrors };
     lgLog.info({ event: "state_update", ...stateUpdate });
     lgLog.info({ event: "node_end", duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` });
     return stateUpdate;
@@ -84,16 +81,15 @@ export const imageAnalysisNode = async (_state: GraphState, config: NodeConfig) 
   });
 
   const response = result.structuredResponse;
-  const kept = response.images.filter((img: ImageResult) => img.keep);
+  const kept = response.images.filter((img) => img.keep);
 
   for (const img of response.images) {
     appLog.info({ event: "image_filter", url: img.url, keep: img.keep, reason: img.reason });
   }
 
   const stateUpdate = {
-    visualSummary: kept.map((img: ImageResult) => img.visualSummary).filter(Boolean).join("\n\n"),
-    identificationCues: kept.map((img: ImageResult) => img.identificationCues).filter(Boolean).join("\n\n"),
-    filteredImageUrls: kept.map((img: ImageResult) => img.url),
+    visualSummary: response.visualSummary,
+    filteredImageUrls: kept.map((img) => img.url),
     errors: fetchErrors,
   };
 

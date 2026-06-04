@@ -91,21 +91,21 @@ Two conditional edges:
 ## Agents
 
 ### 1. Image Analysis Agent (`agents/image-analysis-agent.ts`)
-Analyzes submitted photos to extract place identification cues and visual descriptions.
+Analyzes submitted photos and produces a combined visual summary of kept images.
 - **Model:** `claude-haiku-4-5-20251001` (vision)
 - **Tools:** none
 - **Input:** up to 5 image URLs, fetched and converted to base64 via `helpers/image-fetcher.ts`
-- **Output:** writes `visualSummary`, `identificationCues`, and `filteredImageUrls` to state
-- **Behavior:** for each image, decides keep/discard (is it informative about the place?), extracts identification cues (signage text, venue type, cuisine, architectural style), and writes a visual summary (atmosphere, decor, vibe). Discarded images contribute nothing downstream.
+- **Output:** writes `visualSummary` and `filteredImageUrls` to state
+- **Behavior:** for each image, decides keep/discard (is it informative about the place?). Writes a single `visualSummary` synthesizing what kept images reveal about atmosphere, decor, food/art, and vibe. Empty string if no images are kept.
 
 ### 2. Identification Agent (`agents/identification-agent.ts`)
 Confirms the place exists and retrieves verified details from Google Places.
 - **Model:** `claude-haiku-4-5-20251001`
 - **Tools:** `[google_places]`
-- **Middleware:** `toolCallLimitMiddleware({ runLimit: 1 })`
-- **Input:** place name, destination, country, address hint + identification cues from image analysis (if available)
+- **Middleware:** `toolCallLimitMiddleware({ runLimit: 3 })` — up to 3 sequential calls; evaluates confidence after each and retries with a different query strategy if MEDIUM, LOW, or NONE; stops early at HIGH or VERY_HIGH
+- **Input:** place name, destination, country, address hint (if provided)
 - **Output:** writes `confidence` and `placeDetails` to state
-- **PlaceDetails includes:** verified name, destination, country, address, coordinates, phone, website, priceLevel, openingHours, accessibilityOptions — all from Google Places
+- **PlaceDetails includes:** verified name, destination, country, address, coordinates, phone, website, priceLevel, openingHours, accessibilityOptions — all from Google Places, with provided input as fallback. `destinationName` and `country` are derived from Google's formatted address.
 - **Confidence levels:** VERY_HIGH (exact match) → HIGH (strong match) → MEDIUM (likely correct) → LOW (weak match) → NONE (nothing found)
 
 ### 3. Research Agent (`agents/research-agent.ts`)
@@ -175,7 +175,7 @@ export const Context = z.object({
 ```ts
 const State = Annotation.Root({
   // image analysis outputs
-  visualSummary, identificationCues, filteredImageUrls,
+  visualSummary, filteredImageUrls,
   // identification outputs
   confidence, placeDetails,
   // research outputs
@@ -283,57 +283,31 @@ Place context (`placeName`, `destinationName`, `country`, `imageUrls`, `notes`) 
 
 | Agent | Receives | Produces |
 |-------|----------|----------|
-| **Image analysis** | image URLs (base64) | identificationCues, visualSummary, filteredImageUrls |
-| **Identification** | submitted input + identificationCues | confidence, placeDetails (name, address, coords, phone, website, priceLevel, openingHours, accessibilityOptions) |
+| **Image analysis** | image URLs (base64) | visualSummary, filteredImageUrls |
+| **Identification** | submitted input (name, destination, country, address hint) | confidence, placeDetails (name, address, coords, phone, website, priceLevel, openingHours, accessibilityOptions) |
 | **Research** | verified placeDetails | researchNotes, researchSources |
 | **Editorial** | researchNotes + visualSummary + user notes | editorialContent |
 
 ## Future considerations
-### Needs product brainstorming
-- **Define Input format and validation:** 
-Define use cases and define structured input format.
-1. User submits "The edge, NYC"
-2. User submits "The edge, New York, US" - skips image analysis, run identification, run research, run editorial
-3. User submits "The edge, New York, US", Images[] - run image analysis, run identification, run research, run editorial
-4. User submits "The edge, New York, US", Images[], notes
-5. User submits "The edge, New York, US", notes
-
-No input validation on placeName or destination (ScribeKit can write to pending table for manual approval).
-PlaceName, city, country is required
-Images, notes, address are optional
-
 - **Notes filtering:** 
 Freeform notes may need a filtering/cleaning step before being passed to the editorial agent to strip out inaccuracies, irrelevant content, or poorly formatted text.
 - Do not implement until input format/use case is well defined
 
-### V2
-- **Fallback for places not on Google Places:** 
-New, informal, or unlisted places will be rejected under the current gate logic. A future iteration could have the research agent act as a secondary verification step — searching the web for evidence the place exists and upgrading the confidence if found.
-  - Add Yelp, FourSquare as a way to identify (if it doesn't exist on google place then we don't have core data)
-  - Should placeName/destination/country/address be overridable from agent?
-
 - **Refactor Agents:** 
-  - Image Analysis Agent:
-    - Refactor image analysis agent output to remove all identification cues and consolidate visual summary
-      - remove identificationCues and visualSummary from image
-      - move visualSummary generated by agent to 1st layer of output (visualsummary of all kept images)
-  - Identification Agent:
-    - Remove usage of identificationCues
   - Research Agent:
     - At this point we have - notes(user input), visual summary(image agent), core info(identification agent). 
       But research agent only uses core info because we want to isolate this agent to do it's own research.
       Is another agent that verifies consistency between notes, visual summary and research summary needed? Or 
       research agent can verify notes/visual summary and include it in it's research summary.
 
-- **Factual fields redistribution:** 
-Several editorial output fields are factual rather than creative (neighbourhood, visitDuration, bookingRequired, bookInAdvanceWarning, dressCode, indoorOutdoor, weatherDependent, seasonalTips). These may be better owned by the research agent, which has direct access to factual sources.
 - **Editorial themes:** 
 Add editorial themes
 - **Prompt testing:**
 Test and refactor prompts
 - Refactor image analysis prompt for better visualSummary of kept images
 - Refactor prompt to tighten sources agent calls - unhelpful sources used
+- **Add entrypoint replace cli:**
 
-### V3
+### V2
 - **Video input:** 
 Would require audio transcription (Whisper, Deepgram) and key frame extraction. Deferred — start with images first.
