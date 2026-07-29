@@ -25,7 +25,7 @@ export const researchNode = async (state: GraphState, config: NodeConfig) => {
   const researchAgent = createAgent({
     model: new ChatAnthropic({
       model: "claude-haiku-4-5-20251001",
-      maxTokens: 2048,
+      maxTokens: 4096,
       maxRetries: 2,
     }),
     tools: [fetchUrl],
